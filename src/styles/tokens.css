@@ -1,0 +1,20 @@
+:root {
+  --bg: #0a0a12;
+  --bg-elev: #11111c;
+  --text: #f4f4ff;
+  --text-dim: #7d8094;
+  --accent: #ff3ec8;       /* magenta primary */
+  --accent-2: #00ffd5;     /* cyan secondary */
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --scanline-opacity: 0.06;
+
+  /* Multi-layer neon glow stacks */
+  --glow:
+    0 0 4px var(--accent),
+    0 0 12px var(--accent),
+    0 0 28px var(--accent);
+  --glow-2:
+    0 0 4px var(--accent-2),
+    0 0 12px var(--accent-2),
+    0 0 28px var(--accent-2);
+}
