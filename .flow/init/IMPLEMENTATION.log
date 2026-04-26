@@ -1,0 +1,60 @@
+2026-04-26T13:08 96dfaa0 chore: package.json + tooling (vite, electron, vitest, react)
+2026-04-26T13:09 7792fd4 feat(main): BrowserWindow + frameless chrome + shared types
+2026-04-26T13:09 e1ef1ae feat(main): PKCE auth + loopback callback + keytar storage
+2026-04-26T13:10 922507a feat(main): Spotify API client with typed error mapper + token refresh
+2026-04-26T13:10 2465eb7 feat(preload): typed contextBridge surface + IPC handlers
+2026-04-26T13:11 2237c1b test: PKCE / refresh / error mapper / poller / loopback auth (27 tests, all green)
+2026-04-26T13:13 3761747 feat(renderer): visual tokens + NeonFrame scanlines/glow
+2026-04-26T13:13 d5fd2e6 feat(renderer): NowPlaying + Transport + DeviceBadge
+2026-04-26T13:14 be2dbdb feat(renderer): logged-out CTA + auth wiring
+
+Test result: 27 / 27 passing (vitest run, 1.5s).
+
+Deviations from DESIGN.md
+=========================
+
+NOTE — DESIGN.md proposed a separate `electron/spotify/poller.ts`-resident interval
+loop combined with module-level `startPoller`/`stopPoller` glue. We kept those module
+exports (so main.ts can wire focus/blur/visibility hooks the way the design specifies)
+but added a `createPoller(deps)` factory that returns the actual handle, and an
+`attachPoller()` hook that the IPC layer calls once it has built the OAuth + client.
+This split keeps the pure helpers (`cadenceFor`, `mapPlaybackResponse`) trivially
+testable and decouples poller state from the singleton lifecycle. No behavioral change.
+
+NOTE — DESIGN.md §"Public API / surface" listed `auth.getToken` as a debug-only IPC
+channel. Implementation also exposes `auth.getStatus` (returns logged-in / logged-out)
+because the renderer's first paint needs to know which screen to show before the
+first `auth:changed` event fires. `getStatus` reads in-memory AuthState plus the
+keytar entry as a fallback so a freshly-launched app with a saved refresh token
+boots straight to the Dashboard. Negligible attack surface (returns a boolean kind).
+
+NOTE — Loopback redirect URI fixed to port **53682** (rclone convention) per the
+implement-stage instructions, rather than DESIGN.md's "ephemeral port" wording. This
+is required so the user can register a single redirect URI in the Spotify dev
+dashboard. `runLoopback()` still accepts `port` as a parameter so tests can pass
+`port: 0` for ephemeral binding.
+
+NOTE — `keytar` installed and built natively on this Intel Mac (Xcode CLT present).
+The fallback JSON-file path documented in `electron/auth/keychain.ts` is wired but
+not exercised — kept as a defensive branch so a future packaging environment without
+the prebuilt binary doesn't soft-brick auth.
+
+Manual / deferred items (per TEST_PLAN.md)
+==========================================
+
+- M-1 visual identity screenshot — needs a running window (manual).
+- M-2 1Hz tween — needs real Spotify playback (manual).
+- M-3 transport round-trip — needs Premium account + real device (manual).
+- M-4 logged-out chrome — manual (wipe keychain, relaunch).
+- M-5 fresh launch reaches auth screen — manual (clean checkout, `npm run dev`).
+- M-6 no-active-device messaging — manual.
+- M-7 end-to-end auth on real account — manual.
+- AC-8 DMG packaging — explicitly deferred to v0.2 in DESIGN.md.
+
+Follow-up items
+===============
+
+None blocking v0.1. v0.2 candidates:
+- electron-forge integration for unsigned DMG (closes AC-8).
+- Hardened keytar entitlement for notarization.
+- Web Playback SDK as an in-app device ("play here" toggle).
