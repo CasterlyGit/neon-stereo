@@ -90,7 +90,7 @@ describe('oauth.login full PKCE flow', () => {
 
     // Body sent to /api/token includes a verifier matching the challenge.
     expect(postedBody).not.toBeNull();
-    const body = postedBody as URLSearchParams;
+    const body = postedBody as unknown as URLSearchParams;
     expect(body.get('grant_type')).toBe('authorization_code');
     expect(body.get('code')).toBe('fake-code');
     const verifier = body.get('code_verifier') ?? '';
