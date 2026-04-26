@@ -9,6 +9,8 @@ const api = {
     logout: (): Promise<void> => ipcRenderer.invoke('auth:logout') as Promise<void>,
     getStatus: (): Promise<AuthStatus> => ipcRenderer.invoke('auth:getStatus') as Promise<AuthStatus>,
     getToken: (): Promise<string | null> => ipcRenderer.invoke('auth:getToken') as Promise<string | null>,
+    startDemo: (): Promise<void> => ipcRenderer.invoke('auth:startDemo') as Promise<void>,
+    exitDemo: (): Promise<void> => ipcRenderer.invoke('auth:exitDemo') as Promise<void>,
     onAuthChange(cb: (e: AuthEvent) => void): () => void {
       const handler = (_e: unknown, payload: AuthEvent): void => cb(payload);
       ipcRenderer.on('auth:changed', handler);

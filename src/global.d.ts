@@ -8,6 +8,8 @@ declare global {
         logout(): Promise<void>;
         getStatus(): Promise<{ kind: 'logged-in' | 'logged-out' }>;
         getToken(): Promise<string | null>;
+        startDemo(): Promise<void>;
+        exitDemo(): Promise<void>;
         onAuthChange(cb: (e: AuthEvent) => void): () => void;
       };
       player: {

@@ -1,18 +1,33 @@
 import { ipcMain, shell, type BrowserWindow } from 'electron';
 import { createOAuth, type OAuth } from './auth/oauth.js';
 import { createSpotifyClient } from './spotify/client.js';
-import { attachPoller, createPoller, mapPlaybackResponse } from './spotify/poller.js';
+import {
+  attachPoller,
+  createPoller,
+  mapPlaybackResponse,
+  stopPoller,
+  type PollerHandle,
+} from './spotify/poller.js';
 import { getRefreshToken } from './auth/keychain.js';
+import { createDemoSession, type DemoSession } from './demo/session.js';
+import { createDemoPoller, type DemoPollerHandle } from './demo/poller.js';
 import { serializeError, type AuthEvent, type PlaybackState } from './types.js';
 
 type WinGetter = () => BrowserWindow | null;
 
 export function registerIpcHandlers(getWin: WinGetter): void {
   const clientId = process.env['SPOTIFY_CLIENT_ID'] ?? '';
-  if (!clientId) {
+  let mode: 'spotify' | 'demo' = process.env['NEON_DEMO'] === '1' ? 'demo' : 'spotify';
+
+  if (mode === 'spotify' && !clientId) {
     // eslint-disable-next-line no-console
     console.warn('[neon-stereo] SPOTIFY_CLIENT_ID not set; auth.login will fail.');
   }
+
+  const emitPlayerState = (state: PlaybackState): void => {
+    const w = getWin();
+    if (w) w.webContents.send('player:state', state);
+  };
 
   const oauth: OAuth = createOAuth({
     clientId,
@@ -26,20 +41,22 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     refresh: () => oauth.refresh(),
   });
 
-  // Forward auth events to renderer.
-  oauth.on('auth-changed', (ev: AuthEvent) => {
+  const demoSession: DemoSession = createDemoSession();
+  let demoPoller: DemoPollerHandle | null = null;
+
+  const emitAuth = (ev: AuthEvent): void => {
     const w = getWin();
     if (w) w.webContents.send('auth:changed', ev);
-  });
+  };
 
-  // Boot poller — fetches state via the client.
-  const poller = createPoller({
+  oauth.on('auth-changed', emitAuth);
+  demoSession.on('auth-changed', emitAuth);
+
+  const spotifyPoller: PollerHandle = createPoller({
     fetchPlaybackState: async (): Promise<PlaybackState> => {
-      // Hit the API only if we have a refresh token (logged in). Otherwise no-device.
       const token = await oauth.getAccessToken();
       if (!token) return { kind: 'no-device' };
       try {
-        // Issue raw fetch to capture the 204 status.
         const res = await fetch('https://api.spotify.com/v1/me/player', {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -49,52 +66,102 @@ export function registerIpcHandlers(getWin: WinGetter): void {
         return { kind: 'no-device' };
       }
     },
-    emit: (state) => {
-      const w = getWin();
-      if (w) w.webContents.send('player:state', state);
-    },
+    emit: emitPlayerState,
   });
-  attachPoller(poller);
+
+  function buildDemoPoller(): DemoPollerHandle {
+    return createDemoPoller({ emit: emitPlayerState });
+  }
+
+  async function startDemo(): Promise<void> {
+    if (mode === 'demo') return;
+    stopPoller();
+    mode = 'demo';
+    demoSession.start();
+    demoPoller = buildDemoPoller();
+    attachPoller(demoPoller);
+    await demoPoller.pollNow();
+  }
+
+  async function exitDemo(): Promise<void> {
+    if (mode !== 'demo') return;
+    stopPoller();
+    demoPoller = null;
+    mode = 'spotify';
+    demoSession.exit();
+    attachPoller(spotifyPoller);
+  }
+
+  // Boot the active poller for the initial mode.
+  if (mode === 'demo') {
+    demoSession.start();
+    demoPoller = buildDemoPoller();
+    attachPoller(demoPoller);
+  } else {
+    attachPoller(spotifyPoller);
+  }
 
   // ---------- Auth ----------
   ipcMain.handle('auth:login', async () => {
+    if (mode === 'demo') {
+      throw serializeError(new Error('already in demo mode'));
+    }
     try {
       await oauth.login();
-      // After successful login, force an immediate poll so the dashboard fills in fast.
-      void poller.pollNow();
+      void spotifyPoller.pollNow();
     } catch (e) {
       throw serializeError(e);
     }
   });
   ipcMain.handle('auth:logout', async () => {
+    if (mode === 'demo') {
+      await exitDemo();
+      return;
+    }
     await oauth.logout();
   });
   ipcMain.handle('auth:getStatus', async () => {
+    if (mode === 'demo') return { kind: 'logged-in' as const };
     const status = oauth.getStatus();
     if (status.kind === 'logged-in') return { kind: 'logged-in' as const };
-    // Even when in-memory is logged-out, we may have a stored refresh token.
     const stored = await getRefreshToken();
     return { kind: stored ? ('logged-in' as const) : ('logged-out' as const) };
   });
   ipcMain.handle('auth:getToken', async () => {
+    if (mode === 'demo') return null;
     return oauth.getAccessToken();
+  });
+  ipcMain.handle('auth:startDemo', async () => {
+    await startDemo();
+  });
+  ipcMain.handle('auth:exitDemo', async () => {
+    await exitDemo();
   });
 
   // ---------- Player ----------
-  const wrapControl = (
+  const wrapSpotifyControl = (
     handler: () => Promise<unknown>,
   ): Promise<unknown> =>
     handler()
       .then((v) => {
-        // Optimistic refresh of state.
-        void poller.pollNow();
+        void spotifyPoller.pollNow();
         return v ?? null;
       })
       .catch((e) => {
         throw serializeError(e);
       });
 
+  const wrapDemoControl = (mutate: (p: DemoPollerHandle) => void): Promise<null> => {
+    if (!demoPoller) return Promise.resolve(null);
+    mutate(demoPoller);
+    void demoPoller.pollNow();
+    return Promise.resolve(null);
+  };
+
   ipcMain.handle('player:get', async () => {
+    if (mode === 'demo') {
+      return demoPoller?.getState() ?? ({ kind: 'no-device' } as PlaybackState);
+    }
     const token = await oauth.getAccessToken();
     if (!token) return { kind: 'no-device' } as PlaybackState;
     try {
@@ -108,18 +175,32 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     }
   });
 
-  ipcMain.handle('player:play', () => wrapControl(() => client.request('/me/player/play', { method: 'PUT' })));
-  ipcMain.handle('player:pause', () => wrapControl(() => client.request('/me/player/pause', { method: 'PUT' })));
-  ipcMain.handle('player:next', () => wrapControl(() => client.request('/me/player/next', { method: 'POST' })));
-  ipcMain.handle('player:prev', () => wrapControl(() => client.request('/me/player/previous', { method: 'POST' })));
-  ipcMain.handle('player:seek', (_e, positionMs: number) =>
-    wrapControl(() =>
+  ipcMain.handle('player:play', () => {
+    if (mode === 'demo') return wrapDemoControl((p) => p.play());
+    return wrapSpotifyControl(() => client.request('/me/player/play', { method: 'PUT' }));
+  });
+  ipcMain.handle('player:pause', () => {
+    if (mode === 'demo') return wrapDemoControl((p) => p.pause());
+    return wrapSpotifyControl(() => client.request('/me/player/pause', { method: 'PUT' }));
+  });
+  ipcMain.handle('player:next', () => {
+    if (mode === 'demo') return wrapDemoControl((p) => p.next());
+    return wrapSpotifyControl(() => client.request('/me/player/next', { method: 'POST' }));
+  });
+  ipcMain.handle('player:prev', () => {
+    if (mode === 'demo') return wrapDemoControl((p) => p.prev());
+    return wrapSpotifyControl(() => client.request('/me/player/previous', { method: 'POST' }));
+  });
+  ipcMain.handle('player:seek', (_e, positionMs: number) => {
+    if (mode === 'demo') return wrapDemoControl((p) => p.seek(positionMs));
+    return wrapSpotifyControl(() =>
       client.request('/me/player/seek', { method: 'PUT', query: { position_ms: positionMs } }),
-    ),
-  );
-  ipcMain.handle('player:volume', (_e, percent: number) =>
-    wrapControl(() =>
+    );
+  });
+  ipcMain.handle('player:volume', (_e, percent: number) => {
+    if (mode === 'demo') return wrapDemoControl((p) => p.setVolume(percent));
+    return wrapSpotifyControl(() =>
       client.request('/me/player/volume', { method: 'PUT', query: { volume_percent: percent } }),
-    ),
-  );
+    );
+  });
 }
