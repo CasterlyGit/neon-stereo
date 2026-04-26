@@ -91,7 +91,7 @@ function mapTrack(item: Record<string, unknown>): Track | null {
 
 // ---------- Active poller (uses real timers + Electron) ----------
 
-type PollerHandle = {
+export type PollerHandle = {
   start(): void;
   stop(): void;
   setFocus(focused: boolean): void;
