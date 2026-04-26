@@ -21,6 +21,13 @@ out/
 npm-debug.log*
 yarn-error.log*
 
+# Electron
+out/
+release/
+
+# Tests
+coverage/
+
 # Python (in case any stage uses it)
 __pycache__/
 *.pyc
