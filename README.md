@@ -1,6 +1,6 @@
 # neon-stereo
 
-A retro-styled, neon-accented desktop dashboard for controlling Spotify playback.
+A retro-styled, neon-accented desktop dashboard for controlling your music.
 
 > Initial idea: "a stereo device dashboard that can control my spotify from my desktop, retro style with subtle neon highlights, needs to be an app"
 
@@ -10,10 +10,23 @@ Built with the spec-driven pipeline (`.flow/init/`).
 
 Electron + React + Vite + TypeScript. Tests via Vitest. macOS Intel target.
 
-- **Main process** owns Spotify auth (PKCE), the API client (with typed error mapping +
-  token-refresh memoization), and the focus-aware `/v1/me/player` poller.
+- **Main process** owns provider auth + state. Spotify uses PKCE + the typed
+  `/v1/me/player` API client. YouTube uses the IFrame Player API hosted in a
+  renderer-side embed; the main-process poller funnels its state into the same
+  provider-agnostic `PlaybackState` stream.
 - **Preload** exposes a typed `window.neonStereo` over `contextBridge`.
 - **Renderer** is pure React with hand-rolled CSS for the retro neon look — no UI libs.
+
+## Providers
+
+| Provider | What it gives you | Requires |
+|---|---|---|
+| **Spotify** | Full remote-control of your Spotify Premium account (transport + transfer playback) | Premium account + Spotify Client ID |
+| **YouTube** | Plays any public YouTube video (incl. YouTube Music catalog) inside the app. If you sign into YouTube within the embed, Premium perks (no ads, background) carry through. | Nothing — no API key needed in v1 |
+| **Demo** | Synthetic device + rotating fixture tracks. Useful for trying the UI without auth. | Nothing |
+
+The connect screen lets you pick at runtime; the choice is persisted to
+`~/Library/Application Support/neon-stereo/preferences.json`.
 
 ## Setup
 
@@ -56,6 +69,17 @@ short rotating set of fixture tracks. Alternatively, run `npm run dev` and click
 **▶ try demo mode** on the connect screen. Demo state is per-process — quitting and
 relaunching without the env var or button returns to the connect screen. No keychain
 writes, no network requests to `api.spotify.com`.
+
+### YouTube mode
+
+Click **▶ connect youtube** on the connect screen. No accounts or API keys are
+needed for the free path — paste a YouTube URL or 11-character video ID into the
+input that appears above the transport bar to start playback. If you sign into
+YouTube inside the embedded player, YouTube / YT Music Premium perks (no ads,
+background) carry through.
+
+To boot directly into YouTube mode, set `NEON_DEFAULT_PROVIDER=youtube` in
+`.env`.
 
 ## Scripts
 
