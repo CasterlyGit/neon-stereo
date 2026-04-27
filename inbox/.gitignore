@@ -1,0 +1,5 @@
+# Active "Jira tickets" — local working state. The canonical record lives
+# on GitHub (issues/PRs). The state file maps filename → issue URL.
+*
+!.gitignore
+!.gitkeep

@@ -1,5 +1,7 @@
 // Shared types between main, preload, and renderer.
 
+export type Provider = 'spotify' | 'youtube' | 'demo';
+
 export type Track = {
   id: string;
   title: string;
@@ -33,16 +35,23 @@ export type AuthEvent = { kind: 'logged-in' } | { kind: 'logged-out' };
 
 // ---------- Error classes ----------
 
-export class SpotifyError extends Error {
+export class ProviderError extends Error {
   readonly code: string;
   readonly status: number;
   readonly body: unknown;
   constructor(message: string, opts: { code?: string; status?: number; body?: unknown } = {}) {
     super(message);
-    this.name = 'SpotifyError';
-    this.code = opts.code ?? 'SPOTIFY_ERROR';
+    this.name = 'ProviderError';
+    this.code = opts.code ?? 'PROVIDER_ERROR';
     this.status = opts.status ?? 0;
     this.body = opts.body ?? null;
+  }
+}
+
+export class SpotifyError extends ProviderError {
+  constructor(message: string, opts: { code?: string; status?: number; body?: unknown } = {}) {
+    super(message, { ...opts, code: opts.code ?? 'SPOTIFY_ERROR' });
+    this.name = 'SpotifyError';
   }
 }
 
@@ -105,11 +114,51 @@ export class AuthStateMismatchError extends SpotifyError {
   }
 }
 
+// ---------- YouTube provider errors ----------
+
+export class YouTubeError extends ProviderError {
+  constructor(message: string, opts: { code?: string; status?: number; body?: unknown } = {}) {
+    super(message, { ...opts, code: opts.code ?? 'YT_ERROR' });
+    this.name = 'YouTubeError';
+  }
+}
+
+export class YouTubeVideoUnavailableError extends YouTubeError {
+  constructor(body?: unknown) {
+    super('YouTube video is unavailable', { code: 'YT_VIDEO_UNAVAILABLE', body });
+    this.name = 'YouTubeVideoUnavailableError';
+  }
+}
+
+export class YouTubeEmbedDisabledError extends YouTubeError {
+  constructor(body?: unknown) {
+    super('Embedding has been disabled by the uploader', {
+      code: 'YT_EMBED_DISABLED',
+      body,
+    });
+    this.name = 'YouTubeEmbedDisabledError';
+  }
+}
+
+export class YouTubePlayerNotReadyError extends YouTubeError {
+  constructor() {
+    super('YouTube player is not ready', { code: 'YT_PLAYER_NOT_READY' });
+    this.name = 'YouTubePlayerNotReadyError';
+  }
+}
+
+export class YouTubeNetworkError extends YouTubeError {
+  constructor(cause?: unknown) {
+    super('Network error reaching YouTube', { code: 'YT_NETWORK_ERROR', body: cause });
+    this.name = 'YouTubeNetworkError';
+  }
+}
+
 // Serialized error shape (what we send across IPC).
 export type SerializedError = { code: string; message: string; status: number };
 
 export function serializeError(err: unknown): SerializedError {
-  if (err instanceof SpotifyError) {
+  if (err instanceof ProviderError) {
     return { code: err.code, message: err.message, status: err.status };
   }
   const message = err instanceof Error ? err.message : String(err);
