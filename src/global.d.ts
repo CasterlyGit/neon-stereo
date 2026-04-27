@@ -15,6 +15,9 @@ declare global {
         exitDemo(): Promise<void>;
         startYouTube(): Promise<void>;
         exitYouTube(): Promise<void>;
+        googleLogin(): Promise<void>;
+        googleLogout(): Promise<void>;
+        getGoogleStatus(): Promise<{ kind: 'logged-in' | 'logged-out' }>;
         onAuthChange(cb: (e: AuthEvent) => void): () => void;
       };
       provider: {

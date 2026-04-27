@@ -1,5 +1,10 @@
 import { ipcMain, shell, type BrowserWindow } from 'electron';
 import { createOAuth, type OAuth } from './auth/oauth.js';
+import {
+  createGoogleOAuth,
+  getGoogleRefreshToken,
+  type GoogleOAuth,
+} from './auth/google.js';
 import { createSpotifyClient } from './spotify/client.js';
 import {
   attachPoller,
@@ -45,6 +50,7 @@ function isProvider(v: unknown): v is Provider {
 
 export function registerIpcHandlers(getWin: WinGetter): void {
   const clientId = process.env['SPOTIFY_CLIENT_ID'] ?? '';
+  const googleClientId = process.env['GOOGLE_OAUTH_CLIENT_ID'] ?? '';
 
   // Boot mode: NEON_DEMO=1 wins. Else NEON_DEFAULT_PROVIDER. Else preferences (lazy below).
   // Else default 'spotify'. We resolve preferences async after handlers register.
@@ -62,6 +68,12 @@ export function registerIpcHandlers(getWin: WinGetter): void {
 
   const oauth: OAuth = createOAuth({
     clientId,
+    fetch: globalThis.fetch,
+    openExternal: (url: string) => shell.openExternal(url),
+  });
+
+  const googleOAuth: GoogleOAuth = createGoogleOAuth({
+    clientId: googleClientId,
     fetch: globalThis.fetch,
     openExternal: (url: string) => shell.openExternal(url),
   });
@@ -85,6 +97,7 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   };
 
   oauth.on('auth-changed', emitAuth);
+  googleOAuth.on('auth-changed', emitAuth);
   demoSession.on('auth-changed', emitAuth);
   ytSession.on('auth-changed', emitAuth);
 
@@ -236,7 +249,10 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     const status = oauth.getStatus();
     if (status.kind === 'logged-in') return { kind: 'logged-in' as const };
     const stored = await getRefreshToken();
-    return { kind: stored ? ('logged-in' as const) : ('logged-out' as const) };
+    if (stored) return { kind: 'logged-in' as const };
+    // A stored Google refresh token means a previously signed-in YouTube session.
+    const storedGoogle = await getGoogleRefreshToken();
+    return { kind: storedGoogle ? ('logged-in' as const) : ('logged-out' as const) };
   });
   ipcMain.handle('auth:getToken', async () => {
     if (mode === 'demo' || mode === 'youtube') return null;
@@ -253,6 +269,31 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   });
   ipcMain.handle('auth:exitYouTube', async () => {
     await exitYouTube();
+  });
+  // Google PKCE sign-in for YouTube. After a successful login we land in youtube mode
+  // (no API calls or playback yet — see issue #15 ACs).
+  ipcMain.handle('auth:googleLogin', async () => {
+    if (!googleClientId) {
+      throw serializeError(
+        new Error('GOOGLE_OAUTH_CLIENT_ID not set; cannot sign in to YouTube'),
+      );
+    }
+    try {
+      await googleOAuth.login();
+    } catch (e) {
+      throw serializeError(e);
+    }
+    await startYouTube();
+  });
+  ipcMain.handle('auth:googleLogout', async () => {
+    await googleOAuth.logout();
+    if (mode === 'youtube') await exitYouTube();
+  });
+  ipcMain.handle('auth:getGoogleStatus', async () => {
+    const status = googleOAuth.getStatus();
+    if (status.kind === 'logged-in') return { kind: 'logged-in' as const };
+    const stored = await getGoogleRefreshToken();
+    return { kind: stored ? ('logged-in' as const) : ('logged-out' as const) };
   });
 
   // ---------- Provider routing ----------
