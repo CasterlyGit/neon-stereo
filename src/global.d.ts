@@ -2,6 +2,12 @@ import type { AuthEvent, PlaybackState, Provider } from '../electron/types';
 import type { QueueItem } from '../electron/youtube/preferences';
 import type { YouTubeControl } from '../electron/youtube/poller';
 import type { YouTubePlayerSnapshot } from '../electron/youtube/mapper';
+import type {
+  YouTubePlaylistItem,
+  YouTubePlaylistSummary,
+  YouTubeSearchResult,
+  YouTubeVideoSummary,
+} from '../electron/youtube/api';
 
 declare global {
   interface Window {
@@ -26,6 +32,14 @@ declare global {
       };
       youtube: {
         getQueue(): Promise<QueueItem[]>;
+        library(opts?: { maxResults?: number }): Promise<YouTubeVideoSummary[]>;
+        playlists(opts?: { maxResults?: number }): Promise<YouTubePlaylistSummary[]>;
+        playlistItems(
+          playlistId: string,
+          opts?: { maxResults?: number },
+        ): Promise<YouTubePlaylistItem[]>;
+        search(q: string, opts?: { maxResults?: number }): Promise<YouTubeSearchResult[]>;
+        playVideo(item: { videoId: string; title?: string; durationMs?: number }): Promise<void>;
       };
       player: {
         get(): Promise<PlaybackState>;

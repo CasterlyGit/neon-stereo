@@ -86,12 +86,24 @@ export type YouTubeSearchResult = {
   thumbnailUrl: string | null;
 };
 
+export type YouTubePlaylistItem = {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  thumbnailUrl: string | null;
+};
+
 export type YouTubeApiClient = {
   request<T = unknown>(path: string, opts?: YouTubeRequestOptions): Promise<T | null>;
   /** "Library" surface: the signed-in user's liked videos. */
   listLikedVideos(opts?: { maxResults?: number }): Promise<YouTubeVideoSummary[]>;
   /** Signed-in user's playlists. */
   listMyPlaylists(opts?: { maxResults?: number }): Promise<YouTubePlaylistSummary[]>;
+  /** Videos inside a playlist. */
+  listPlaylistItems(
+    playlistId: string,
+    opts?: { maxResults?: number },
+  ): Promise<YouTubePlaylistItem[]>;
   /** Search YouTube for videos matching the query. */
   search(q: string, opts?: { maxResults?: number }): Promise<YouTubeSearchResult[]>;
 };
@@ -168,7 +180,22 @@ export function createYouTubeApiClient(deps: YouTubeClientDeps): YouTubeApiClien
     return mapSearchItems(body?.items ?? []);
   }
 
-  return { request, listLikedVideos, listMyPlaylists, search };
+  async function listPlaylistItems(
+    playlistId: string,
+    opts: { maxResults?: number } = {},
+  ): Promise<YouTubePlaylistItem[]> {
+    if (!playlistId) return [];
+    const body = await request<{ items?: unknown[] }>('/playlistItems', {
+      query: {
+        part: 'snippet,contentDetails',
+        playlistId,
+        maxResults: opts.maxResults ?? 50,
+      },
+    });
+    return mapPlaylistItemRows(body?.items ?? []);
+  }
+
+  return { request, listLikedVideos, listMyPlaylists, listPlaylistItems, search };
 }
 
 // ---------- Mapping helpers ----------
@@ -211,6 +238,32 @@ function mapPlaylistItems(items: unknown[]): YouTubePlaylistSummary[] {
         : 0;
     const thumbnailUrl = pickThumbnail(snippet?.['thumbnails']);
     out.push({ id, title, itemCount, thumbnailUrl });
+  }
+  return out;
+}
+
+function mapPlaylistItemRows(items: unknown[]): YouTubePlaylistItem[] {
+  const out: YouTubePlaylistItem[] = [];
+  for (const raw of items) {
+    if (!raw || typeof raw !== 'object') continue;
+    const it = raw as Record<string, unknown>;
+    const snippet = it['snippet'] as Record<string, unknown> | undefined;
+    const contentDetails = it['contentDetails'] as Record<string, unknown> | undefined;
+    const videoId =
+      contentDetails && typeof contentDetails['videoId'] === 'string'
+        ? (contentDetails['videoId'] as string)
+        : null;
+    const title =
+      snippet && typeof snippet['title'] === 'string' ? (snippet['title'] as string) : null;
+    if (!videoId || !title) continue;
+    const channelTitle =
+      snippet && typeof snippet['videoOwnerChannelTitle'] === 'string'
+        ? (snippet['videoOwnerChannelTitle'] as string)
+        : snippet && typeof snippet['channelTitle'] === 'string'
+          ? (snippet['channelTitle'] as string)
+          : '';
+    const thumbnailUrl = pickThumbnail(snippet?.['thumbnails']);
+    out.push({ videoId, title, channelTitle, thumbnailUrl });
   }
   return out;
 }

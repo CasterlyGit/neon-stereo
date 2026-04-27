@@ -195,10 +195,21 @@ export class YouTubeServerError extends YouTubeError {
 // Serialized error shape (what we send across IPC).
 export type SerializedError = { code: string; message: string; status: number };
 
-export function serializeError(err: unknown): SerializedError {
+// Sentinel that lets the preload identify and parse our structured errors out of
+// Electron's `Error invoking remote method '...': <stringified>` wrapper. Plain
+// objects thrown from `ipcMain.handle` lose custom properties across the IPC
+// boundary, so we encode the payload into the Error message instead.
+export const IPC_ERROR_TAG = '__neonStereoIpcErr__';
+
+export function serializeError(err: unknown): Error & SerializedError {
+  let payload: SerializedError;
   if (err instanceof ProviderError) {
-    return { code: err.code, message: err.message, status: err.status };
+    payload = { code: err.code, message: err.message, status: err.status };
+  } else if (err instanceof Error) {
+    payload = { code: 'UNKNOWN', message: err.message, status: 0 };
+  } else {
+    payload = { code: 'UNKNOWN', message: String(err), status: 0 };
   }
-  const message = err instanceof Error ? err.message : String(err);
-  return { code: 'UNKNOWN', message, status: 0 };
+  const wire = `${IPC_ERROR_TAG}${JSON.stringify(payload)}`;
+  return Object.assign(new Error(wire), payload);
 }

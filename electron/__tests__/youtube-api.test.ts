@@ -262,4 +262,61 @@ describe('YouTubeApiClient — convenience methods', () => {
     expect(out).toEqual([]);
     expect(called).toBe(false);
   });
+
+  it('listPlaylistItems maps playlistItems.list rows and pulls videoId from contentDetails', async () => {
+    let capturedUrl = '';
+    const fetchFake: typeof fetch = async (input) => {
+      capturedUrl = typeof input === 'string' ? input : (input as URL).toString();
+      return new Response(
+        JSON.stringify({
+          items: [
+            {
+              snippet: {
+                title: 'Track 1',
+                videoOwnerChannelTitle: 'Owner',
+                thumbnails: { medium: { url: 'https://img/1.jpg' } },
+              },
+              contentDetails: { videoId: 'vid-1' },
+            },
+            // Missing videoId → dropped.
+            { snippet: { title: 'Orphan' }, contentDetails: {} },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ) as Response;
+    };
+    const client = createYouTubeApiClient({
+      fetch: fetchFake,
+      getAccessToken: async () => 'TOKEN',
+      refresh: async () => {
+        throw new Error('should not refresh');
+      },
+    });
+    const out = await client.listPlaylistItems('PLxyz');
+    expect(out).toEqual([
+      {
+        videoId: 'vid-1',
+        title: 'Track 1',
+        channelTitle: 'Owner',
+        thumbnailUrl: 'https://img/1.jpg',
+      },
+    ]);
+    expect(capturedUrl).toContain('playlistId=PLxyz');
+  });
+
+  it('listPlaylistItems short-circuits on empty playlistId', async () => {
+    let called = false;
+    const fetchFake: typeof fetch = async () => {
+      called = true;
+      throw new Error('should not be called');
+    };
+    const client = createYouTubeApiClient({
+      fetch: fetchFake,
+      getAccessToken: async () => 'TOKEN',
+      refresh: async () => 'TOKEN',
+    });
+    const out = await client.listPlaylistItems('');
+    expect(out).toEqual([]);
+    expect(called).toBe(false);
+  });
 });

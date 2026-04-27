@@ -57,9 +57,14 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   // Else default 'spotify'. We resolve preferences async after handlers register.
   let mode: Provider = process.env['NEON_DEMO'] === '1' ? 'demo' : envProvider() ?? 'spotify';
 
-  if (mode === 'spotify' && !clientId) {
+  // Only warn at boot when the user has nothing wired up at all. If
+  // GOOGLE_OAUTH_CLIENT_ID is configured, they're using YouTube and don't
+  // need a Spotify client ID — printing it then is just noise.
+  if (mode === 'spotify' && !clientId && !googleClientId) {
     // eslint-disable-next-line no-console
-    console.warn('[neon-stereo] SPOTIFY_CLIENT_ID not set; auth.login will fail.');
+    console.warn(
+      '[neon-stereo] no provider credentials configured; set SPOTIFY_CLIENT_ID or GOOGLE_OAUTH_CLIENT_ID in .env.',
+    );
   }
 
   const emitPlayerState = (state: PlaybackState): void => {
@@ -282,7 +287,10 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   ipcMain.handle('auth:googleLogin', async () => {
     if (!googleClientId) {
       throw serializeError(
-        new Error('GOOGLE_OAUTH_CLIENT_ID not set; cannot sign in to YouTube'),
+        new YouTubeError(
+          'YouTube sign-in is not configured: set GOOGLE_OAUTH_CLIENT_ID and restart.',
+          { code: 'GOOGLE_NOT_CONFIGURED' },
+        ),
       );
     }
     try {
@@ -359,6 +367,43 @@ export function registerIpcHandlers(getWin: WinGetter): void {
       return await ytApi.search(q, {
         maxResults: typeof max === 'number' ? max : undefined,
       });
+    } catch (e) {
+      throw serializeError(e);
+    }
+  });
+  ipcMain.handle('yt:playlistItems', async (_e, payload: unknown) => {
+    try {
+      requireYouTubeMode();
+      const playlistId = (payload as { playlistId?: unknown } | null)?.playlistId;
+      const max = (payload as { maxResults?: unknown } | null)?.maxResults;
+      if (typeof playlistId !== 'string' || !playlistId) {
+        throw new YouTubeError('playlistId is required');
+      }
+      return await ytApi.listPlaylistItems(playlistId, {
+        maxResults: typeof max === 'number' ? max : undefined,
+      });
+    } catch (e) {
+      throw serializeError(e);
+    }
+  });
+  // Playback handoff: queue a video then ask the embed to load + play it.
+  ipcMain.handle('yt:playVideo', async (_e, payload: unknown) => {
+    try {
+      requireYouTubeMode();
+      const p = payload as { videoId?: unknown; title?: unknown; durationMs?: unknown } | null;
+      const videoId = p?.videoId;
+      if (typeof videoId !== 'string' || !videoId) {
+        throw new YouTubeError('videoId is required');
+      }
+      const item: QueueItem = { videoId };
+      if (typeof p?.title === 'string') item.title = p.title;
+      if (typeof p?.durationMs === 'number') item.durationMs = p.durationMs;
+      ytQueue.add(item);
+      if (youtubePoller) {
+        sendToRenderer('yt:control', { kind: 'loadVideoId', videoId });
+        youtubePoller.play();
+      }
+      return null;
     } catch (e) {
       throw serializeError(e);
     }
