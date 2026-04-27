@@ -44,8 +44,15 @@ export function ConnectScreen(): JSX.Element {
       await window.neonStereo.auth.googleLogin();
     } catch (e: unknown) {
       const code = (e as { code?: string } | null)?.code;
-      const msg = (e as { message?: string } | null)?.message ?? 'YouTube sign-in failed';
-      setErr(code === 'AUTH_CANCELLED' ? null : msg);
+      const message = (e as { message?: string } | null)?.message ?? 'YouTube sign-in failed';
+      if (code === 'AUTH_CANCELLED') setErr(null);
+      else if (code === 'GOOGLE_NOT_CONFIGURED')
+        setErr(
+          "YouTube sign-in isn't configured yet. Set GOOGLE_OAUTH_CLIENT_ID in .env (Desktop OAuth client from Google Cloud Console) and restart neon-stereo.",
+        );
+      else if (code === 'YT_NETWORK_ERROR' || code === 'NETWORK_ERROR')
+        setErr("couldn't reach Google — check your connection and try again.");
+      else setErr(message);
     } finally {
       setSignInBusy(false);
     }
@@ -121,42 +128,70 @@ export function ConnectScreen(): JSX.Element {
           >
             {busy ? 'connecting…' : '▶  connect spotify'}
           </button>
-          <button
-            className="no-drag"
-            onClick={() => void signInWithYouTube()}
-            disabled={anyBusy}
-            style={{
-              border: '1px solid #ff5252',
-              color: '#ff7c7c',
-              textShadow: '0 0 4px #ff5252',
-              boxShadow: '0 0 4px #ff5252, 0 0 12px rgba(255, 82, 82, 0.4)',
-              padding: '14px 32px',
-              fontSize: 14,
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              background: 'rgba(255, 82, 82, 0.08)',
-              minWidth: 240,
-            }}
-          >
-            {signInBusy ? 'signing in…' : '▶  sign in with youtube'}
-          </button>
-          <button
-            className="no-drag"
-            onClick={() => void connectYouTube()}
-            disabled={anyBusy}
-            style={{
-              border: '1px solid #ff5252',
-              color: '#ff7c7c',
-              padding: '10px 28px',
-              fontSize: 12,
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
-              background: 'rgba(255, 82, 82, 0.04)',
-              minWidth: 240,
-            }}
-          >
-            {ytBusy ? 'starting…' : '▶  youtube without sign-in'}
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <button
+              className="no-drag"
+              onClick={() => void signInWithYouTube()}
+              disabled={anyBusy}
+              style={{
+                border: '1px solid #ff5252',
+                color: '#ff7c7c',
+                textShadow: '0 0 4px #ff5252',
+                boxShadow: '0 0 4px #ff5252, 0 0 12px rgba(255, 82, 82, 0.4)',
+                padding: '14px 32px',
+                fontSize: 14,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                background: 'rgba(255, 82, 82, 0.08)',
+                minWidth: 240,
+              }}
+            >
+              {signInBusy ? 'opening browser…' : '▶  sign in with youtube'}
+            </button>
+            <div
+              style={{
+                color: 'var(--text-dim)',
+                fontSize: 10,
+                letterSpacing: '0.04em',
+                maxWidth: 260,
+                textAlign: 'center',
+              }}
+            >
+              opens Google's sign-in page in your browser. neon-stereo never
+              sees your password.
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <button
+              className="no-drag"
+              onClick={() => void connectYouTube()}
+              disabled={anyBusy}
+              style={{
+                border: '1px solid #ff5252',
+                color: '#ff7c7c',
+                padding: '10px 28px',
+                fontSize: 12,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                background: 'rgba(255, 82, 82, 0.04)',
+                minWidth: 240,
+              }}
+            >
+              {ytBusy ? 'starting…' : '▶  youtube — playback only'}
+            </button>
+            <div
+              style={{
+                color: 'var(--text-dim)',
+                fontSize: 10,
+                letterSpacing: '0.04em',
+                maxWidth: 260,
+                textAlign: 'center',
+              }}
+            >
+              skip sign-in. plays public videos via embed; library, playlists,
+              and search are disabled.
+            </div>
+          </div>
           <button
             className="no-drag"
             onClick={() => void tryDemo()}

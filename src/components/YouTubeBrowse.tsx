@@ -33,14 +33,59 @@ export function YouTubeBrowse({
   const [searchResults, setSearchResults] = useState<YouTubeSearchResult[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [signingIn, setSigningIn] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
+    void window.neonStereo.auth
+      .getGoogleStatus()
+      .then((s) => {
+        if (mounted) setSignedIn(s.kind === 'logged-in');
+      })
+      .catch(() => {
+        if (mounted) setSignedIn(false);
+      });
+    const off = window.neonStereo.auth.onAuthChange((e) => {
+      if (e.kind === 'logged-in') setSignedIn(true);
+      // Ignore logged-out here — Spotify/demo also emit this and would clobber our state.
+    });
+    return () => {
+      mounted = false;
+      off();
+    };
+  }, []);
+
+  async function handleSignIn(): Promise<void> {
+    setErr(null);
+    setSigningIn(true);
+    try {
+      await window.neonStereo.auth.googleLogin();
+      setSignedIn(true);
+      // Force the active tab to re-fetch.
+      setLibrary(null);
+      setPlaylists(null);
+      setSearchResults(null);
+    } catch (e: unknown) {
+      const code = (e as { code?: string } | null)?.code;
+      if (code !== 'AUTH_CANCELLED') setErr(errorMessage(e));
+    } finally {
+      setSigningIn(false);
+    }
+  }
+
+  useEffect(() => {
+    if (signedIn !== true) return;
     if (tab === 'library' && library === null) {
       setBusy(true);
       window.neonStereo.youtube
         .library()
         .then((items) => setLibrary(items))
-        .catch((e: unknown) => setErr(errorMessage(e)))
+        .catch((e: unknown) => {
+          const code = (e as { code?: string } | null)?.code;
+          if (code === 'YT_AUTH_EXPIRED') setSignedIn(false);
+          else setErr(errorMessage(e));
+        })
         .finally(() => setBusy(false));
     }
     if (tab === 'playlists' && playlists === null) {
@@ -48,10 +93,14 @@ export function YouTubeBrowse({
       window.neonStereo.youtube
         .playlists()
         .then((items) => setPlaylists(items))
-        .catch((e: unknown) => setErr(errorMessage(e)))
+        .catch((e: unknown) => {
+          const code = (e as { code?: string } | null)?.code;
+          if (code === 'YT_AUTH_EXPIRED') setSignedIn(false);
+          else setErr(errorMessage(e));
+        })
         .finally(() => setBusy(false));
     }
-  }, [tab, library, playlists]);
+  }, [tab, library, playlists, signedIn]);
 
   async function play(row: Row): Promise<void> {
     setErr(null);
@@ -63,7 +112,9 @@ export function YouTubeBrowse({
       });
       onPlay?.();
     } catch (e: unknown) {
-      setErr(errorMessage(e));
+      const code = (e as { code?: string } | null)?.code;
+      if (code === 'YT_AUTH_EXPIRED') setSignedIn(false);
+      else setErr(errorMessage(e));
     }
   }
 
@@ -76,7 +127,9 @@ export function YouTubeBrowse({
       const items = await window.neonStereo.youtube.search(q);
       setSearchResults(items);
     } catch (e: unknown) {
-      setErr(errorMessage(e));
+      const code = (e as { code?: string } | null)?.code;
+      if (code === 'YT_AUTH_EXPIRED') setSignedIn(false);
+      else setErr(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -90,11 +143,67 @@ export function YouTubeBrowse({
       const items = await window.neonStereo.youtube.playlistItems(p.id);
       setOpenPlaylist({ id: p.id, title: p.title, items });
     } catch (e: unknown) {
-      setErr(errorMessage(e));
-      setOpenPlaylist({ id: p.id, title: p.title, items: [] });
+      const code = (e as { code?: string } | null)?.code;
+      if (code === 'YT_AUTH_EXPIRED') {
+        setSignedIn(false);
+        setOpenPlaylist(null);
+      } else {
+        setErr(errorMessage(e));
+        setOpenPlaylist({ id: p.id, title: p.title, items: [] });
+      }
     } finally {
       setBusy(false);
     }
+  }
+
+  if (signedIn === false) {
+    return (
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          gap: 16,
+          textAlign: 'center',
+        }}
+      >
+        <div
+          className="glow-text"
+          style={{ fontSize: 14, letterSpacing: '0.12em', textTransform: 'uppercase' }}
+        >
+          sign in to browse YouTube
+        </div>
+        <div style={{ color: 'var(--text-dim)', fontSize: 11, maxWidth: 320, lineHeight: 1.5 }}>
+          neon-stereo opens Google's sign-in page in your browser to read your
+          library, playlists, and search. We never see your password.
+        </div>
+        <button
+          className="no-drag"
+          onClick={() => void handleSignIn()}
+          disabled={signingIn}
+          style={{
+            border: '1px solid #ff5252',
+            color: '#ff7c7c',
+            textShadow: '0 0 4px #ff5252',
+            boxShadow: '0 0 4px #ff5252, 0 0 12px rgba(255, 82, 82, 0.4)',
+            padding: '12px 28px',
+            fontSize: 12,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            background: 'rgba(255, 82, 82, 0.08)',
+            minWidth: 240,
+          }}
+        >
+          {signingIn ? 'opening browser…' : '▶  sign in with google'}
+        </button>
+        {err && (
+          <div style={{ color: '#ff5566', fontSize: 11, maxWidth: 320 }}>{err}</div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -454,9 +563,12 @@ const subStyle: React.CSSProperties = {
 
 function errorMessage(e: unknown): string {
   const code = (e as { code?: string } | null)?.code;
+  if (code === 'GOOGLE_NOT_CONFIGURED')
+    return "YouTube sign-in isn't configured. Set GOOGLE_OAUTH_CLIENT_ID in .env and restart neon-stereo.";
   if (code === 'YT_NETWORK_ERROR') return "couldn't reach YouTube — check your connection.";
   if (code === 'YT_AUTH_EXPIRED') return 'session expired — sign in again.';
-  if (code === 'YT_FORBIDDEN') return "request was forbidden — the YouTube Data API may be disabled for this client.";
+  if (code === 'YT_FORBIDDEN')
+    return "YouTube refused this request. The Google account may not have access, or the YouTube Data API isn't enabled for this OAuth client.";
   if (code === 'YT_RATE_LIMITED') return 'rate limited — try again in a moment.';
   if (code === 'YT_NOT_ACTIVE') return 'youtube mode is not active.';
   return (e as { message?: string } | null)?.message ?? 'something went wrong';

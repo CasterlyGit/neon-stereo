@@ -282,7 +282,10 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   ipcMain.handle('auth:googleLogin', async () => {
     if (!googleClientId) {
       throw serializeError(
-        new Error('GOOGLE_OAUTH_CLIENT_ID not set; cannot sign in to YouTube'),
+        new YouTubeError(
+          'YouTube sign-in is not configured: set GOOGLE_OAUTH_CLIENT_ID and restart.',
+          { code: 'GOOGLE_NOT_CONFIGURED' },
+        ),
       );
     }
     try {
