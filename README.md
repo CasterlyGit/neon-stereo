@@ -43,6 +43,20 @@ npm run dev
 The window opens to the **Connect Spotify** screen on first launch. After approving in
 the browser, the dashboard appears — no restart needed.
 
+### Demo mode
+
+To explore the UI without Spotify credentials, set `NEON_DEMO=1`:
+
+```sh
+NEON_DEMO=1 npm run dev
+```
+
+The app boots straight to the dashboard with a synthetic device labelled `DEMO` and a
+short rotating set of fixture tracks. Alternatively, run `npm run dev` and click
+**▶ try demo mode** on the connect screen. Demo state is per-process — quitting and
+relaunching without the env var or button returns to the connect screen. No keychain
+writes, no network requests to `api.spotify.com`.
+
 ## Scripts
 
 | Script | Behavior |
