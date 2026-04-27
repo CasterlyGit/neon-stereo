@@ -1,0 +1,10 @@
+2026-04-26T23:06 795d307 types: add ProviderError parent + YouTube error classes
+2026-04-26T23:07 c0da95b keychain: per-provider account names with back-compat fallback
+2026-04-26T23:08 762fbe1 youtube: add poller + mapper + queue + preferences scaffolding
+2026-04-26T23:10 628d6a1 ipc: generalize mode router to spotify | youtube | demo
+2026-04-26T23:13 9ffb760 renderer: youtube provider UI + embed bridge
+2026-04-26T23:13 2506769 docs: env vars + README provider section
+2026-04-26T23:16 07aed3d tests: pin youtube mapper, poller, and ipc mode-router behaviors
+2026-04-26T23:16 NOTE — DESIGN.md said the YT-mode boot would resolve preferences async ("`void readPreferences().then(...)`"), but that left handlers seeing a half-attached poller in the IPC tests. Switched to a synchronous boot — attach poller with an empty queue, hydrate persisted queue async. patchPreferences calls inside start*/exit* are now awaited so callers can observe the persisted state after their IPC call resolves. DESIGN.md not updated; behavioral contract is unchanged from the renderer's POV.
+2026-04-26T23:16 NOTE — Mapper resolved the cross-bundle question (DESIGN.md "Risks") option (b)-ish: mapper.ts lives in electron/youtube/ and is imported by both bundles via the same relative-path pattern that already works for electron/types.ts (renderer reaches it via '../../electron/youtube/mapper'). No new shared/ directory needed.
+2026-04-26T23:16 NOTE — Added an internal '_ytBridge' namespace in preload to bridge yt:control / yt:request-state / yt:state between main and the YouTubeEmbed component. DESIGN.md described this implicitly via "ipcRenderer.on('yt:control', ...)" but contextIsolation forbids direct ipcRenderer access from the renderer, so the bridge is necessary.
