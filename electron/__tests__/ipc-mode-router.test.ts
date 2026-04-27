@@ -244,44 +244,6 @@ describe('ipc — yt:state push pipeline', () => {
   });
 });
 
-describe('ipc — yt:loadVideoId validates input', () => {
-  it('valid URL → ipc forwards loadVideoId control to renderer', async () => {
-    const { invoke, rendererSends } = await bootIpc({
-      NEON_DEMO: undefined,
-      NEON_DEFAULT_PROVIDER: 'youtube',
-      SPOTIFY_CLIENT_ID: 'cid',
-    });
-    expect(await invoke('provider:getActive')).toBe('youtube');
-    const before = rendererSends.length;
-    await invoke('yt:loadVideoId', { videoId: 'https://youtu.be/dQw4w9WgXcQ' });
-    const after = rendererSends.slice(before);
-    const ctrl = after.find((s) => s.channel === 'yt:control');
-    expect(ctrl).toBeDefined();
-    expect(ctrl?.payload).toEqual({ kind: 'loadVideoId', videoId: 'dQw4w9WgXcQ' });
-  });
-
-  it('invalid id rejects', async () => {
-    const { invoke } = await bootIpc({
-      NEON_DEMO: undefined,
-      NEON_DEFAULT_PROVIDER: 'youtube',
-      SPOTIFY_CLIENT_ID: 'cid',
-    });
-    await expect(invoke('yt:loadVideoId', { videoId: 'not-a-real-id' })).rejects.toMatchObject({
-      code: 'YT_ERROR',
-    });
-  });
-
-  it('rejects when not in youtube mode', async () => {
-    const { invoke } = await bootIpc({
-      NEON_DEMO: undefined,
-      SPOTIFY_CLIENT_ID: 'cid',
-    });
-    await expect(
-      invoke('yt:loadVideoId', { videoId: 'dQw4w9WgXcQ' }),
-    ).rejects.toMatchObject({ code: 'YT_ERROR' });
-  });
-});
-
 describe('ipc — player:* in youtube mode forwards yt:control commands', () => {
   it('player:play sends { kind: "play" } over yt:control', async () => {
     const { invoke, rendererSends } = await bootIpc({

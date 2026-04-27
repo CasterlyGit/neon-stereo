@@ -32,8 +32,6 @@ const api = {
       ipcRenderer.invoke('provider:setActive', name) as Promise<void>,
   },
   youtube: {
-    loadVideoId: (videoId: string): Promise<void> =>
-      ipcRenderer.invoke('yt:loadVideoId', { videoId }) as Promise<void>,
     getQueue: (): Promise<QueueItem[]> =>
       ipcRenderer.invoke('yt:getQueue') as Promise<QueueItem[]>,
   },
