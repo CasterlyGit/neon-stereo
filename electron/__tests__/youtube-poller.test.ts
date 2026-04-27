@@ -82,11 +82,6 @@ describe('createYouTubePoller — control commands forward to renderer', () => {
     expect(h.sent).toEqual([{ kind: 'volume', percent: 33 }]);
   });
 
-  it('loadVideoId forwards the id', () => {
-    const h = harness();
-    h.poller.loadVideoId('newid123456');
-    expect(h.sent).toEqual([{ kind: 'loadVideoId', videoId: 'newid123456' }]);
-  });
 });
 
 describe('createYouTubePoller — next/prev consult the queue', () => {

@@ -132,7 +132,7 @@ export function YouTubeEmbed(): JSX.Element {
           p.pauseVideo();
           break;
         case 'next':
-          // No native queue when driven by paste-URL — rely on main's queue.
+          // Main owns the queue; the embed has no native one.
           break;
         case 'prev':
           break;

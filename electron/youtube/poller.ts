@@ -25,7 +25,6 @@ export type YouTubePollerDeps = {
 export type YouTubePollerHandle = PollerHandle & {
   /** Renderer pushed an updated snapshot; re-emit as PlaybackState. */
   applySnapshot(snap: YouTubePlayerSnapshot): void;
-  loadVideoId(videoId: string): void;
   play(): void;
   pause(): void;
   next(): void;
@@ -107,9 +106,6 @@ export function createYouTubePoller(deps: YouTubePollerDeps): YouTubePollerHandl
       lastSnap = snap;
       lastState = rebuildState();
       deps.emit(lastState);
-    },
-    loadVideoId(videoId): void {
-      deps.sendControl({ kind: 'loadVideoId', videoId });
     },
     play(): void {
       deps.sendControl({ kind: 'play' });

@@ -5,7 +5,6 @@ import { NowPlaying } from './NowPlaying';
 import { Transport } from './Transport';
 import { DeviceBadge } from './DeviceBadge';
 import { YouTubeEmbed } from './YouTubeEmbed';
-import { UrlPasteBar } from './UrlPasteBar';
 
 export function Dashboard(): JSX.Element {
   const [state, setState] = useState<PlaybackState>({ kind: 'no-device' });
@@ -54,7 +53,6 @@ export function Dashboard(): JSX.Element {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <NowPlaying state={state} />
       </div>
-      {provider === 'youtube' && <UrlPasteBar />}
       <Transport state={state} provider={provider} />
       {provider === 'youtube' && <YouTubeEmbed />}
     </div>

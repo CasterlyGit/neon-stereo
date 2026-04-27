@@ -22,10 +22,9 @@ import {
   readPreferences,
   type QueueItem,
 } from './youtube/preferences.js';
-import { parseVideoId, type YouTubePlayerSnapshot } from './youtube/mapper.js';
+import { type YouTubePlayerSnapshot } from './youtube/mapper.js';
 import {
   serializeError,
-  YouTubeError,
   type AuthEvent,
   type PlaybackState,
   type Provider,
@@ -272,16 +271,6 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   });
 
   // ---------- YouTube embed bridge ----------
-  ipcMain.handle('yt:loadVideoId', async (_e, payload: unknown) => {
-    if (mode !== 'youtube' || !youtubePoller) {
-      throw serializeError(new YouTubeError('youtube mode is not active'));
-    }
-    const videoId = (payload as { videoId?: unknown } | null)?.videoId;
-    const id = typeof videoId === 'string' ? parseVideoId(videoId) : null;
-    if (!id) throw serializeError(new YouTubeError('invalid video id'));
-    ytQueue.add({ videoId: id });
-    youtubePoller.loadVideoId(id);
-  });
   ipcMain.handle('yt:getQueue', async () => ytQueue.list());
 
   // Renderer pushes player snapshots; main re-emits as PlaybackState.

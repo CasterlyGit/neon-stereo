@@ -22,7 +22,6 @@ declare global {
         setActive(name: Provider): Promise<void>;
       };
       youtube: {
-        loadVideoId(videoId: string): Promise<void>;
         getQueue(): Promise<QueueItem[]>;
       };
       player: {
