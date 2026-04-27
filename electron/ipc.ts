@@ -11,13 +11,44 @@ import {
 import { getRefreshToken } from './auth/keychain.js';
 import { createDemoSession, type DemoSession } from './demo/session.js';
 import { createDemoPoller, type DemoPollerHandle } from './demo/poller.js';
-import { serializeError, type AuthEvent, type PlaybackState } from './types.js';
+import {
+  createYouTubePoller,
+  type YouTubePollerHandle,
+  type YouTubeControl,
+} from './youtube/poller.js';
+import { createQueue, type Queue } from './youtube/queue.js';
+import {
+  patchPreferences,
+  readPreferences,
+  type QueueItem,
+} from './youtube/preferences.js';
+import { parseVideoId, type YouTubePlayerSnapshot } from './youtube/mapper.js';
+import {
+  serializeError,
+  YouTubeError,
+  type AuthEvent,
+  type PlaybackState,
+  type Provider,
+} from './types.js';
 
 type WinGetter = () => BrowserWindow | null;
 
+function envProvider(): Provider | null {
+  const v = process.env['NEON_DEFAULT_PROVIDER'];
+  if (v === 'spotify' || v === 'youtube' || v === 'demo') return v;
+  return null;
+}
+
+function isProvider(v: unknown): v is Provider {
+  return v === 'spotify' || v === 'youtube' || v === 'demo';
+}
+
 export function registerIpcHandlers(getWin: WinGetter): void {
   const clientId = process.env['SPOTIFY_CLIENT_ID'] ?? '';
-  let mode: 'spotify' | 'demo' = process.env['NEON_DEMO'] === '1' ? 'demo' : 'spotify';
+
+  // Boot mode: NEON_DEMO=1 wins. Else NEON_DEFAULT_PROVIDER. Else preferences (lazy below).
+  // Else default 'spotify'. We resolve preferences async after handlers register.
+  let mode: Provider = process.env['NEON_DEMO'] === '1' ? 'demo' : envProvider() ?? 'spotify';
 
   if (mode === 'spotify' && !clientId) {
     // eslint-disable-next-line no-console
@@ -44,6 +75,10 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   const demoSession: DemoSession = createDemoSession();
   let demoPoller: DemoPollerHandle | null = null;
 
+  const ytSession = createDemoSession(); // re-use shape: tracks logged-in/out
+  let youtubePoller: YouTubePollerHandle | null = null;
+  let ytQueue: Queue = createQueue();
+
   const emitAuth = (ev: AuthEvent): void => {
     const w = getWin();
     if (w) w.webContents.send('auth:changed', ev);
@@ -51,6 +86,7 @@ export function registerIpcHandlers(getWin: WinGetter): void {
 
   oauth.on('auth-changed', emitAuth);
   demoSession.on('auth-changed', emitAuth);
+  ytSession.on('auth-changed', emitAuth);
 
   const spotifyPoller: PollerHandle = createPoller({
     fetchPlaybackState: async (): Promise<PlaybackState> => {
@@ -73,14 +109,38 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     return createDemoPoller({ emit: emitPlayerState });
   }
 
+  function sendToRenderer(channel: string, payload?: unknown): void {
+    const w = getWin();
+    if (w) w.webContents.send(channel, payload);
+  }
+
+  function buildYouTubePoller(initialQueue: QueueItem[]): YouTubePollerHandle {
+    ytQueue = createQueue({
+      initial: initialQueue,
+      onChange: (items) => {
+        void patchPreferences({ ytQueue: items });
+      },
+    });
+    return createYouTubePoller({
+      emit: emitPlayerState,
+      sendControl: (cmd: YouTubeControl) => sendToRenderer('yt:control', cmd),
+      requestState: () => sendToRenderer('yt:request-state'),
+      advanceQueue: (dir) => {
+        const item = dir === 'next' ? ytQueue.next() : ytQueue.prev();
+        return item ? item.videoId : null;
+      },
+    });
+  }
+
   async function startDemo(): Promise<void> {
     if (mode === 'demo') return;
-    stopPoller();
+    await deactivateActive();
     mode = 'demo';
     demoSession.start();
     demoPoller = buildDemoPoller();
     attachPoller(demoPoller);
     await demoPoller.pollNow();
+    void patchPreferences({ lastProvider: 'demo' });
   }
 
   async function exitDemo(): Promise<void> {
@@ -90,6 +150,42 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     mode = 'spotify';
     demoSession.exit();
     attachPoller(spotifyPoller);
+    void patchPreferences({ lastProvider: 'spotify' });
+  }
+
+  async function startYouTube(): Promise<void> {
+    if (mode === 'youtube') return;
+    await deactivateActive();
+    mode = 'youtube';
+    const prefs = await readPreferences();
+    youtubePoller = buildYouTubePoller(prefs.ytQueue);
+    attachPoller(youtubePoller);
+    ytSession.start();
+    void patchPreferences({ lastProvider: 'youtube' });
+  }
+
+  async function exitYouTube(): Promise<void> {
+    if (mode !== 'youtube') return;
+    stopPoller();
+    youtubePoller = null;
+    mode = 'spotify';
+    ytSession.exit();
+    attachPoller(spotifyPoller);
+    void patchPreferences({ lastProvider: 'spotify' });
+  }
+
+  async function deactivateActive(): Promise<void> {
+    if (mode === 'demo') {
+      stopPoller();
+      demoPoller = null;
+      demoSession.exit();
+    } else if (mode === 'youtube') {
+      stopPoller();
+      youtubePoller = null;
+      ytSession.exit();
+    } else {
+      stopPoller();
+    }
   }
 
   // Boot the active poller for the initial mode.
@@ -97,6 +193,13 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     demoSession.start();
     demoPoller = buildDemoPoller();
     attachPoller(demoPoller);
+  } else if (mode === 'youtube') {
+    // Async preferences read; attach poller as soon as resolved.
+    void readPreferences().then((prefs) => {
+      youtubePoller = buildYouTubePoller(prefs.ytQueue);
+      attachPoller(youtubePoller);
+      ytSession.start();
+    });
   } else {
     attachPoller(spotifyPoller);
   }
@@ -105,6 +208,9 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   ipcMain.handle('auth:login', async () => {
     if (mode === 'demo') {
       throw serializeError(new Error('already in demo mode'));
+    }
+    if (mode === 'youtube') {
+      throw serializeError(new Error('already in youtube mode'));
     }
     try {
       await oauth.login();
@@ -118,17 +224,21 @@ export function registerIpcHandlers(getWin: WinGetter): void {
       await exitDemo();
       return;
     }
+    if (mode === 'youtube') {
+      await exitYouTube();
+      return;
+    }
     await oauth.logout();
   });
   ipcMain.handle('auth:getStatus', async () => {
-    if (mode === 'demo') return { kind: 'logged-in' as const };
+    if (mode === 'demo' || mode === 'youtube') return { kind: 'logged-in' as const };
     const status = oauth.getStatus();
     if (status.kind === 'logged-in') return { kind: 'logged-in' as const };
     const stored = await getRefreshToken();
     return { kind: stored ? ('logged-in' as const) : ('logged-out' as const) };
   });
   ipcMain.handle('auth:getToken', async () => {
-    if (mode === 'demo') return null;
+    if (mode === 'demo' || mode === 'youtube') return null;
     return oauth.getAccessToken();
   });
   ipcMain.handle('auth:startDemo', async () => {
@@ -136,6 +246,48 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   });
   ipcMain.handle('auth:exitDemo', async () => {
     await exitDemo();
+  });
+  ipcMain.handle('auth:startYouTube', async () => {
+    await startYouTube();
+  });
+  ipcMain.handle('auth:exitYouTube', async () => {
+    await exitYouTube();
+  });
+
+  // ---------- Provider routing ----------
+  ipcMain.handle('provider:getActive', async () => mode);
+  ipcMain.handle('provider:setActive', async (_e, name: unknown) => {
+    if (!isProvider(name)) throw serializeError(new Error('invalid provider'));
+    if (name === mode) return;
+    if (name === 'demo') {
+      await startDemo();
+    } else if (name === 'youtube') {
+      await startYouTube();
+    } else {
+      // spotify
+      if (mode === 'demo') await exitDemo();
+      else if (mode === 'youtube') await exitYouTube();
+    }
+  });
+
+  // ---------- YouTube embed bridge ----------
+  ipcMain.handle('yt:loadVideoId', async (_e, payload: unknown) => {
+    if (mode !== 'youtube' || !youtubePoller) {
+      throw serializeError(new YouTubeError('youtube mode is not active'));
+    }
+    const videoId = (payload as { videoId?: unknown } | null)?.videoId;
+    const id = typeof videoId === 'string' ? parseVideoId(videoId) : null;
+    if (!id) throw serializeError(new YouTubeError('invalid video id'));
+    ytQueue.add({ videoId: id });
+    youtubePoller.loadVideoId(id);
+  });
+  ipcMain.handle('yt:getQueue', async () => ytQueue.list());
+
+  // Renderer pushes player snapshots; main re-emits as PlaybackState.
+  ipcMain.on('yt:state', (_e, snap: YouTubePlayerSnapshot) => {
+    if (mode !== 'youtube' || !youtubePoller) return;
+    if (!snap || typeof snap !== 'object') return;
+    youtubePoller.applySnapshot(snap);
   });
 
   // ---------- Player ----------
@@ -158,9 +310,18 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     return Promise.resolve(null);
   };
 
+  const wrapYouTubeControl = (mutate: (p: YouTubePollerHandle) => void): Promise<null> => {
+    if (!youtubePoller) return Promise.resolve(null);
+    mutate(youtubePoller);
+    return Promise.resolve(null);
+  };
+
   ipcMain.handle('player:get', async () => {
     if (mode === 'demo') {
       return demoPoller?.getState() ?? ({ kind: 'no-device' } as PlaybackState);
+    }
+    if (mode === 'youtube') {
+      return youtubePoller?.getState() ?? ({ kind: 'no-device' } as PlaybackState);
     }
     const token = await oauth.getAccessToken();
     if (!token) return { kind: 'no-device' } as PlaybackState;
@@ -177,28 +338,34 @@ export function registerIpcHandlers(getWin: WinGetter): void {
 
   ipcMain.handle('player:play', () => {
     if (mode === 'demo') return wrapDemoControl((p) => p.play());
+    if (mode === 'youtube') return wrapYouTubeControl((p) => p.play());
     return wrapSpotifyControl(() => client.request('/me/player/play', { method: 'PUT' }));
   });
   ipcMain.handle('player:pause', () => {
     if (mode === 'demo') return wrapDemoControl((p) => p.pause());
+    if (mode === 'youtube') return wrapYouTubeControl((p) => p.pause());
     return wrapSpotifyControl(() => client.request('/me/player/pause', { method: 'PUT' }));
   });
   ipcMain.handle('player:next', () => {
     if (mode === 'demo') return wrapDemoControl((p) => p.next());
+    if (mode === 'youtube') return wrapYouTubeControl((p) => p.next());
     return wrapSpotifyControl(() => client.request('/me/player/next', { method: 'POST' }));
   });
   ipcMain.handle('player:prev', () => {
     if (mode === 'demo') return wrapDemoControl((p) => p.prev());
+    if (mode === 'youtube') return wrapYouTubeControl((p) => p.prev());
     return wrapSpotifyControl(() => client.request('/me/player/previous', { method: 'POST' }));
   });
   ipcMain.handle('player:seek', (_e, positionMs: number) => {
     if (mode === 'demo') return wrapDemoControl((p) => p.seek(positionMs));
+    if (mode === 'youtube') return wrapYouTubeControl((p) => p.seek(positionMs));
     return wrapSpotifyControl(() =>
       client.request('/me/player/seek', { method: 'PUT', query: { position_ms: positionMs } }),
     );
   });
   ipcMain.handle('player:volume', (_e, percent: number) => {
     if (mode === 'demo') return wrapDemoControl((p) => p.setVolume(percent));
+    if (mode === 'youtube') return wrapYouTubeControl((p) => p.setVolume(percent));
     return wrapSpotifyControl(() =>
       client.request('/me/player/volume', { method: 'PUT', query: { volume_percent: percent } }),
     );

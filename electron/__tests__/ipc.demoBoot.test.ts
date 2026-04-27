@@ -4,6 +4,7 @@ import type { PlaybackState } from '../types.js';
 type Handler = (...args: unknown[]) => unknown;
 const handlerStore = new Map<string, Handler>();
 
+const onListeners = new Map<string, Handler>();
 vi.mock('electron', () => ({
   ipcMain: {
     handle: (channel: string, fn: Handler): void => {
@@ -11,6 +12,12 @@ vi.mock('electron', () => ({
     },
     removeHandler: (channel: string): void => {
       handlerStore.delete(channel);
+    },
+    on: (channel: string, fn: Handler): void => {
+      onListeners.set(channel, fn);
+    },
+    off: (channel: string): void => {
+      onListeners.delete(channel);
     },
   },
   shell: { openExternal: async (): Promise<void> => {} },
@@ -45,6 +52,7 @@ async function bootIpc(env: Record<string, string | undefined>): Promise<{
 
   vi.resetModules();
   handlerStore.clear();
+  onListeners.clear();
 
   const ipcMod = await import('../ipc.js');
   const pollerMod = await import('../spotify/poller.js');
