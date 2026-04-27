@@ -154,6 +154,44 @@ export class YouTubeNetworkError extends YouTubeError {
   }
 }
 
+export class YouTubeAuthExpiredError extends YouTubeError {
+  constructor(body?: unknown) {
+    super('YouTube access token expired', {
+      code: 'YT_AUTH_EXPIRED',
+      status: 401,
+      body,
+    });
+    this.name = 'YouTubeAuthExpiredError';
+  }
+}
+
+export class YouTubeForbiddenError extends YouTubeError {
+  constructor(body?: unknown) {
+    super('YouTube request forbidden', { code: 'YT_FORBIDDEN', status: 403, body });
+    this.name = 'YouTubeForbiddenError';
+  }
+}
+
+export class YouTubeRateLimitError extends YouTubeError {
+  readonly retryAfterSec: number;
+  constructor(retryAfterSec: number, body?: unknown) {
+    super(`YouTube rate limited (retry after ${retryAfterSec}s)`, {
+      code: 'YT_RATE_LIMITED',
+      status: 429,
+      body,
+    });
+    this.name = 'YouTubeRateLimitError';
+    this.retryAfterSec = retryAfterSec;
+  }
+}
+
+export class YouTubeServerError extends YouTubeError {
+  constructor(status: number, body?: unknown) {
+    super(`YouTube server error (${status})`, { code: 'YT_SERVER_ERROR', status, body });
+    this.name = 'YouTubeServerError';
+  }
+}
+
 // Serialized error shape (what we send across IPC).
 export type SerializedError = { code: string; message: string; status: number };
 

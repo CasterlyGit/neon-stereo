@@ -28,8 +28,10 @@ import {
   type QueueItem,
 } from './youtube/preferences.js';
 import { type YouTubePlayerSnapshot } from './youtube/mapper.js';
+import { createYouTubeApiClient, type YouTubeApiClient } from './youtube/api.js';
 import {
   serializeError,
+  YouTubeError,
   type AuthEvent,
   type PlaybackState,
   type Provider,
@@ -81,6 +83,12 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     fetch: globalThis.fetch,
     getAccessToken: () => oauth.getAccessToken(),
     refresh: () => oauth.refresh(),
+  });
+
+  const ytApi: YouTubeApiClient = createYouTubeApiClient({
+    fetch: globalThis.fetch,
+    getAccessToken: () => googleOAuth.getAccessToken(),
+    refresh: () => googleOAuth.refresh(),
   });
 
   const demoSession: DemoSession = createDemoSession();
@@ -308,6 +316,51 @@ export function registerIpcHandlers(getWin: WinGetter): void {
       // spotify
       if (mode === 'demo') await exitDemo();
       else if (mode === 'youtube') await exitYouTube();
+    }
+  });
+
+  // ---------- YouTube Data API ----------
+  // Reads off the signed-in user's Google OAuth tokens (issue #15). Each handler
+  // refuses unless we're actually in youtube mode so the renderer can't fish for
+  // a token from any other state.
+  const requireYouTubeMode = (): void => {
+    if (mode !== 'youtube') {
+      throw new YouTubeError('youtube mode is not active', { code: 'YT_NOT_ACTIVE' });
+    }
+  };
+  ipcMain.handle('yt:library', async (_e, payload: unknown) => {
+    try {
+      requireYouTubeMode();
+      const max = (payload as { maxResults?: unknown } | null)?.maxResults;
+      return await ytApi.listLikedVideos({
+        maxResults: typeof max === 'number' ? max : undefined,
+      });
+    } catch (e) {
+      throw serializeError(e);
+    }
+  });
+  ipcMain.handle('yt:playlists', async (_e, payload: unknown) => {
+    try {
+      requireYouTubeMode();
+      const max = (payload as { maxResults?: unknown } | null)?.maxResults;
+      return await ytApi.listMyPlaylists({
+        maxResults: typeof max === 'number' ? max : undefined,
+      });
+    } catch (e) {
+      throw serializeError(e);
+    }
+  });
+  ipcMain.handle('yt:search', async (_e, payload: unknown) => {
+    try {
+      requireYouTubeMode();
+      const q = (payload as { q?: unknown } | null)?.q;
+      const max = (payload as { maxResults?: unknown } | null)?.maxResults;
+      if (typeof q !== 'string') throw new YouTubeError('search query is required');
+      return await ytApi.search(q, {
+        maxResults: typeof max === 'number' ? max : undefined,
+      });
+    } catch (e) {
+      throw serializeError(e);
     }
   });
 
