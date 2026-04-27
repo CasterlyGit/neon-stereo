@@ -3,6 +3,11 @@ import type { AuthEvent, PlaybackState, Provider } from './types.js';
 import type { QueueItem } from './youtube/preferences.js';
 import type { YouTubeControl } from './youtube/poller.js';
 import type { YouTubePlayerSnapshot } from './youtube/mapper.js';
+import type {
+  YouTubePlaylistSummary,
+  YouTubeSearchResult,
+  YouTubeVideoSummary,
+} from './youtube/api.js';
 
 type AuthStatus = { kind: 'logged-in' | 'logged-out' };
 
@@ -34,6 +39,12 @@ const api = {
   youtube: {
     getQueue: (): Promise<QueueItem[]> =>
       ipcRenderer.invoke('yt:getQueue') as Promise<QueueItem[]>,
+    library: (opts?: { maxResults?: number }): Promise<YouTubeVideoSummary[]> =>
+      ipcRenderer.invoke('yt:library', opts ?? {}) as Promise<YouTubeVideoSummary[]>,
+    playlists: (opts?: { maxResults?: number }): Promise<YouTubePlaylistSummary[]> =>
+      ipcRenderer.invoke('yt:playlists', opts ?? {}) as Promise<YouTubePlaylistSummary[]>,
+    search: (q: string, opts?: { maxResults?: number }): Promise<YouTubeSearchResult[]> =>
+      ipcRenderer.invoke('yt:search', { q, ...(opts ?? {}) }) as Promise<YouTubeSearchResult[]>,
   },
   player: {
     get: (): Promise<PlaybackState> => ipcRenderer.invoke('player:get') as Promise<PlaybackState>,
