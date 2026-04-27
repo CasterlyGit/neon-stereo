@@ -5,10 +5,14 @@ import { NowPlaying } from './NowPlaying';
 import { Transport } from './Transport';
 import { DeviceBadge } from './DeviceBadge';
 import { YouTubeEmbed } from './YouTubeEmbed';
+import { YouTubeBrowse } from './YouTubeBrowse';
+
+type YtView = 'browse' | 'now-playing';
 
 export function Dashboard(): JSX.Element {
   const [state, setState] = useState<PlaybackState>({ kind: 'no-device' });
   const [provider, setProvider] = useState<Provider>('spotify');
+  const [ytView, setYtView] = useState<YtView>('browse');
 
   useEffect(() => {
     let mounted = true;
@@ -30,6 +34,9 @@ export function Dashboard(): JSX.Element {
       ? state.device
       : null;
 
+  const isYouTube = provider === 'youtube';
+  const showBrowse = isYouTube && ytView === 'browse';
+
   return (
     <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <TitleBar />
@@ -42,19 +49,42 @@ export function Dashboard(): JSX.Element {
         }}
       >
         <DeviceBadge device={device} />
-        <button
-          className="no-drag"
-          style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}
-          onClick={() => void window.neonStereo.auth.logout()}
-        >
-          disconnect
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {isYouTube && (
+            <button
+              className="no-drag"
+              onClick={() => setYtView(ytView === 'browse' ? 'now-playing' : 'browse')}
+              style={{
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                border: '1px solid rgba(255, 82, 82, 0.4)',
+                color: '#ff7c7c',
+                background: 'rgba(255, 82, 82, 0.04)',
+                padding: '4px 10px',
+              }}
+            >
+              {ytView === 'browse' ? 'now playing' : 'browse'}
+            </button>
+          )}
+          <button
+            className="no-drag"
+            style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}
+            onClick={() => void window.neonStereo.auth.logout()}
+          >
+            disconnect
+          </button>
+        </div>
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <NowPlaying state={state} />
+        {showBrowse ? (
+          <YouTubeBrowse onPlay={() => setYtView('now-playing')} />
+        ) : (
+          <NowPlaying state={state} />
+        )}
       </div>
       <Transport state={state} provider={provider} />
-      {provider === 'youtube' && <YouTubeEmbed />}
+      {isYouTube && <YouTubeEmbed />}
     </div>
   );
 }

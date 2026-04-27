@@ -4,6 +4,7 @@ import type { QueueItem } from './youtube/preferences.js';
 import type { YouTubeControl } from './youtube/poller.js';
 import type { YouTubePlayerSnapshot } from './youtube/mapper.js';
 import type {
+  YouTubePlaylistItem,
   YouTubePlaylistSummary,
   YouTubeSearchResult,
   YouTubeVideoSummary,
@@ -45,6 +46,15 @@ const api = {
       ipcRenderer.invoke('yt:playlists', opts ?? {}) as Promise<YouTubePlaylistSummary[]>,
     search: (q: string, opts?: { maxResults?: number }): Promise<YouTubeSearchResult[]> =>
       ipcRenderer.invoke('yt:search', { q, ...(opts ?? {}) }) as Promise<YouTubeSearchResult[]>,
+    playlistItems: (
+      playlistId: string,
+      opts?: { maxResults?: number },
+    ): Promise<YouTubePlaylistItem[]> =>
+      ipcRenderer.invoke('yt:playlistItems', { playlistId, ...(opts ?? {}) }) as Promise<
+        YouTubePlaylistItem[]
+      >,
+    playVideo: (item: { videoId: string; title?: string; durationMs?: number }): Promise<void> =>
+      ipcRenderer.invoke('yt:playVideo', item) as Promise<void>,
   },
   player: {
     get: (): Promise<PlaybackState> => ipcRenderer.invoke('player:get') as Promise<PlaybackState>,

@@ -363,6 +363,43 @@ export function registerIpcHandlers(getWin: WinGetter): void {
       throw serializeError(e);
     }
   });
+  ipcMain.handle('yt:playlistItems', async (_e, payload: unknown) => {
+    try {
+      requireYouTubeMode();
+      const playlistId = (payload as { playlistId?: unknown } | null)?.playlistId;
+      const max = (payload as { maxResults?: unknown } | null)?.maxResults;
+      if (typeof playlistId !== 'string' || !playlistId) {
+        throw new YouTubeError('playlistId is required');
+      }
+      return await ytApi.listPlaylistItems(playlistId, {
+        maxResults: typeof max === 'number' ? max : undefined,
+      });
+    } catch (e) {
+      throw serializeError(e);
+    }
+  });
+  // Playback handoff: queue a video then ask the embed to load + play it.
+  ipcMain.handle('yt:playVideo', async (_e, payload: unknown) => {
+    try {
+      requireYouTubeMode();
+      const p = payload as { videoId?: unknown; title?: unknown; durationMs?: unknown } | null;
+      const videoId = p?.videoId;
+      if (typeof videoId !== 'string' || !videoId) {
+        throw new YouTubeError('videoId is required');
+      }
+      const item: QueueItem = { videoId };
+      if (typeof p?.title === 'string') item.title = p.title;
+      if (typeof p?.durationMs === 'number') item.durationMs = p.durationMs;
+      ytQueue.add(item);
+      if (youtubePoller) {
+        sendToRenderer('yt:control', { kind: 'loadVideoId', videoId });
+        youtubePoller.play();
+      }
+      return null;
+    } catch (e) {
+      throw serializeError(e);
+    }
+  });
 
   // ---------- YouTube embed bridge ----------
   ipcMain.handle('yt:getQueue', async () => ytQueue.list());
