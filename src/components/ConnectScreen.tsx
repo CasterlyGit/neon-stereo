@@ -4,9 +4,12 @@ import { TitleBar } from './TitleBar';
 export function ConnectScreen(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
+  const [ytBusy, setYtBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  async function connect(): Promise<void> {
+  const anyBusy = busy || demoBusy || ytBusy;
+
+  async function connectSpotify(): Promise<void> {
     setBusy(true);
     setErr(null);
     try {
@@ -17,6 +20,19 @@ export function ConnectScreen(): JSX.Element {
       setErr(code === 'AUTH_CANCELLED' ? null : msg);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function connectYouTube(): Promise<void> {
+    setYtBusy(true);
+    setErr(null);
+    try {
+      await window.neonStereo.auth.startYouTube();
+    } catch (e: unknown) {
+      const msg = (e as { message?: string } | null)?.message ?? 'YouTube failed to start';
+      setErr(msg);
+    } finally {
+      setYtBusy(false);
     }
   }
 
@@ -67,14 +83,14 @@ export function ConnectScreen(): JSX.Element {
             neon-stereo
           </div>
           <div style={{ color: 'var(--text-dim)', fontSize: 12, letterSpacing: '0.1em' }}>
-            // RETRO REMOTE FOR YOUR SPOTIFY //
+            // RETRO REMOTE FOR YOUR MUSIC //
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
           <button
             className="no-drag"
-            onClick={() => void connect()}
-            disabled={busy || demoBusy}
+            onClick={() => void connectSpotify()}
+            disabled={anyBusy}
             style={{
               border: '1px solid var(--accent)',
               color: 'var(--accent)',
@@ -85,14 +101,32 @@ export function ConnectScreen(): JSX.Element {
               letterSpacing: '0.18em',
               textTransform: 'uppercase',
               background: 'rgba(255, 62, 200, 0.05)',
+              minWidth: 240,
             }}
           >
             {busy ? 'connecting…' : '▶  connect spotify'}
           </button>
           <button
             className="no-drag"
+            onClick={() => void connectYouTube()}
+            disabled={anyBusy}
+            style={{
+              border: '1px solid #ff5252',
+              color: '#ff7c7c',
+              padding: '12px 28px',
+              fontSize: 13,
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              background: 'rgba(255, 82, 82, 0.06)',
+              minWidth: 240,
+            }}
+          >
+            {ytBusy ? 'starting…' : '▶  connect youtube'}
+          </button>
+          <button
+            className="no-drag"
             onClick={() => void tryDemo()}
-            disabled={busy || demoBusy}
+            disabled={anyBusy}
             style={{
               border: '1px solid var(--text-dim)',
               color: 'var(--text-dim)',
@@ -101,6 +135,7 @@ export function ConnectScreen(): JSX.Element {
               letterSpacing: '0.18em',
               textTransform: 'uppercase',
               background: 'transparent',
+              minWidth: 240,
             }}
           >
             {demoBusy ? 'starting demo…' : '▶  try demo mode'}

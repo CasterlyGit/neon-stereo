@@ -8,7 +8,14 @@ import path from 'node:path';
 import os from 'node:os';
 
 const SERVICE = 'neon-stereo';
-const ACCOUNT = 'spotify-refresh';
+
+export type ProviderAccount = 'spotify';
+
+export function accountFor(provider: ProviderAccount): string {
+  return `${provider}-refresh`;
+}
+
+const DEFAULT_PROVIDER: ProviderAccount = 'spotify';
 
 type Keytar = {
   getPassword(service: string, account: string): Promise<string | null>;
@@ -43,66 +50,97 @@ function fallbackPath(): string {
   return path.join(dir, 'tokens.json');
 }
 
-async function fileGet(): Promise<string | null> {
+async function fileGet(provider: ProviderAccount): Promise<string | null> {
   try {
     const raw = await fs.readFile(fallbackPath(), 'utf8');
     const obj = JSON.parse(raw) as Record<string, string>;
-    return obj['refresh_token'] ?? null;
+    const key = `${provider}_refresh_token`;
+    if (typeof obj[key] === 'string') return obj[key] ?? null;
+    // Back-compat: pre-multi-provider files used a flat refresh_token key for spotify.
+    if (provider === 'spotify' && typeof obj['refresh_token'] === 'string')
+      return obj['refresh_token'] ?? null;
+    return null;
   } catch {
     return null;
   }
 }
 
-async function fileSet(token: string): Promise<void> {
+async function fileSet(provider: ProviderAccount, token: string): Promise<void> {
   const p = fallbackPath();
   await fs.mkdir(path.dirname(p), { recursive: true });
-  await fs.writeFile(p, JSON.stringify({ refresh_token: token }), { mode: 0o600 });
+  let existing: Record<string, string> = {};
+  try {
+    const raw = await fs.readFile(p, 'utf8');
+    existing = JSON.parse(raw) as Record<string, string>;
+  } catch {
+    /* fresh file */
+  }
+  existing[`${provider}_refresh_token`] = token;
+  // Back-compat key kept in sync for spotify so older readers still work.
+  if (provider === 'spotify') existing['refresh_token'] = token;
+  await fs.writeFile(p, JSON.stringify(existing), { mode: 0o600 });
 }
 
-async function fileClear(): Promise<void> {
+async function fileClear(provider: ProviderAccount): Promise<void> {
   try {
-    await fs.unlink(fallbackPath());
+    const p = fallbackPath();
+    const raw = await fs.readFile(p, 'utf8');
+    const obj = JSON.parse(raw) as Record<string, string>;
+    delete obj[`${provider}_refresh_token`];
+    if (provider === 'spotify') delete obj['refresh_token'];
+    if (Object.keys(obj).length === 0) {
+      await fs.unlink(p);
+    } else {
+      await fs.writeFile(p, JSON.stringify(obj), { mode: 0o600 });
+    }
   } catch {
     /* noop */
   }
 }
 
-export async function getRefreshToken(): Promise<string | null> {
+export async function getRefreshToken(
+  provider: ProviderAccount = DEFAULT_PROVIDER,
+): Promise<string | null> {
   const k = await loadKeytar();
   if (k) {
     try {
-      return await k.getPassword(SERVICE, ACCOUNT);
+      return await k.getPassword(SERVICE, accountFor(provider));
     } catch {
-      return fileGet();
+      return fileGet(provider);
     }
   }
-  return fileGet();
+  return fileGet(provider);
 }
 
-export async function setRefreshToken(token: string): Promise<void> {
+export async function setRefreshToken(
+  token: string,
+  provider: ProviderAccount = DEFAULT_PROVIDER,
+): Promise<void> {
   const k = await loadKeytar();
   if (k) {
     try {
-      await k.setPassword(SERVICE, ACCOUNT, token);
+      await k.setPassword(SERVICE, accountFor(provider), token);
       return;
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('[neon-stereo] keytar.setPassword failed, using JSON fallback', e);
     }
   }
-  await fileSet(token);
+  await fileSet(provider, token);
 }
 
-export async function clearRefreshToken(): Promise<void> {
+export async function clearRefreshToken(
+  provider: ProviderAccount = DEFAULT_PROVIDER,
+): Promise<void> {
   const k = await loadKeytar();
   if (k) {
     try {
-      await k.deletePassword(SERVICE, ACCOUNT);
+      await k.deletePassword(SERVICE, accountFor(provider));
     } catch {
       /* fall through */
     }
   }
-  await fileClear();
+  await fileClear(provider);
 }
 
 // Test-only injection seam.

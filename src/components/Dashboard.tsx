@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react';
-import type { PlaybackState } from '../../electron/types';
+import type { PlaybackState, Provider } from '../../electron/types';
 import { TitleBar } from './TitleBar';
 import { NowPlaying } from './NowPlaying';
 import { Transport } from './Transport';
 import { DeviceBadge } from './DeviceBadge';
+import { YouTubeEmbed } from './YouTubeEmbed';
+import { UrlPasteBar } from './UrlPasteBar';
 
 export function Dashboard(): JSX.Element {
   const [state, setState] = useState<PlaybackState>({ kind: 'no-device' });
+  const [provider, setProvider] = useState<Provider>('spotify');
 
   useEffect(() => {
     let mounted = true;
     void window.neonStereo.player.get().then((s) => {
       if (mounted) setState(s);
+    });
+    void window.neonStereo.provider.getActive().then((p) => {
+      if (mounted) setProvider(p);
     });
     const off = window.neonStereo.player.onState((s) => setState(s));
     return () => {
@@ -48,7 +54,9 @@ export function Dashboard(): JSX.Element {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <NowPlaying state={state} />
       </div>
-      <Transport state={state} />
+      {provider === 'youtube' && <UrlPasteBar />}
+      <Transport state={state} provider={provider} />
+      {provider === 'youtube' && <YouTubeEmbed />}
     </div>
   );
 }

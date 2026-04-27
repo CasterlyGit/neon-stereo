@@ -1,4 +1,7 @@
-import type { AuthEvent, PlaybackState } from '../electron/types';
+import type { AuthEvent, PlaybackState, Provider } from '../electron/types';
+import type { QueueItem } from '../electron/youtube/preferences';
+import type { YouTubeControl } from '../electron/youtube/poller';
+import type { YouTubePlayerSnapshot } from '../electron/youtube/mapper';
 
 declare global {
   interface Window {
@@ -10,7 +13,17 @@ declare global {
         getToken(): Promise<string | null>;
         startDemo(): Promise<void>;
         exitDemo(): Promise<void>;
+        startYouTube(): Promise<void>;
+        exitYouTube(): Promise<void>;
         onAuthChange(cb: (e: AuthEvent) => void): () => void;
+      };
+      provider: {
+        getActive(): Promise<Provider>;
+        setActive(name: Provider): Promise<void>;
+      };
+      youtube: {
+        loadVideoId(videoId: string): Promise<void>;
+        getQueue(): Promise<QueueItem[]>;
       };
       player: {
         get(): Promise<PlaybackState>;
@@ -21,6 +34,11 @@ declare global {
         seek(positionMs: number): Promise<void>;
         setVolume(percent: number): Promise<void>;
         onState(cb: (s: PlaybackState) => void): () => void;
+      };
+      _ytBridge: {
+        onControl(cb: (cmd: YouTubeControl) => void): () => void;
+        onRequestState(cb: () => void): () => void;
+        sendState(snap: YouTubePlayerSnapshot): void;
       };
     };
   }

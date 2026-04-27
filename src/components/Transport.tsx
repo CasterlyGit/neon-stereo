@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PlaybackState } from '../../electron/types';
+import type { PlaybackState, Provider } from '../../electron/types';
 
 type Toast = { kind: 'error' | 'info'; text: string } | null;
 
@@ -15,7 +15,13 @@ function useDebounced<T>(value: T, delay: number, onCommit: (v: T) => void): voi
   }, [value]);
 }
 
-export function Transport({ state }: { state: PlaybackState }): JSX.Element {
+export function Transport({
+  state,
+  provider = 'spotify',
+}: {
+  state: PlaybackState;
+  provider?: Provider;
+}): JSX.Element {
   const active = state.kind === 'playing' || state.kind === 'paused';
   const isPlaying = state.kind === 'playing';
   const trackDuration = active ? state.track.durationMs : 0;
@@ -44,12 +50,24 @@ export function Transport({ state }: { state: PlaybackState }): JSX.Element {
       await fn();
     } catch (e: unknown) {
       const code = (e as { code?: string } | null)?.code;
-      if (code === 'PREMIUM_REQUIRED') {
+      if (code === 'PREMIUM_REQUIRED' && provider === 'spotify') {
         showToast('Spotify Premium is required to control playback');
       } else if (code === 'NETWORK_ERROR') {
-        showToast("Couldn't reach Spotify — check your connection.");
+        showToast(
+          provider === 'youtube'
+            ? "Couldn't reach YouTube — check your connection."
+            : "Couldn't reach Spotify — check your connection.",
+        );
+      } else if (code === 'YT_NETWORK_ERROR') {
+        showToast("Couldn't reach YouTube — check your connection.");
       } else if (code === 'RATE_LIMITED') {
         showToast('Rate limited, try again in a moment.');
+      } else if (code === 'YT_VIDEO_UNAVAILABLE') {
+        showToast('Video unavailable — try a different one.');
+      } else if (code === 'YT_EMBED_DISABLED') {
+        showToast('This video disables embedding — pick another.');
+      } else if (code === 'YT_PLAYER_NOT_READY') {
+        showToast('YouTube player not ready yet — give it a sec.');
       } else {
         const msg = (e as { message?: string } | null)?.message ?? 'Something went wrong';
         showToast(msg);

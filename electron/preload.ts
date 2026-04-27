@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AuthEvent, PlaybackState } from './types.js';
+import type { AuthEvent, PlaybackState, Provider } from './types.js';
+import type { QueueItem } from './youtube/preferences.js';
+import type { YouTubeControl } from './youtube/poller.js';
+import type { YouTubePlayerSnapshot } from './youtube/mapper.js';
 
 type AuthStatus = { kind: 'logged-in' | 'logged-out' };
 
@@ -11,11 +14,24 @@ const api = {
     getToken: (): Promise<string | null> => ipcRenderer.invoke('auth:getToken') as Promise<string | null>,
     startDemo: (): Promise<void> => ipcRenderer.invoke('auth:startDemo') as Promise<void>,
     exitDemo: (): Promise<void> => ipcRenderer.invoke('auth:exitDemo') as Promise<void>,
+    startYouTube: (): Promise<void> => ipcRenderer.invoke('auth:startYouTube') as Promise<void>,
+    exitYouTube: (): Promise<void> => ipcRenderer.invoke('auth:exitYouTube') as Promise<void>,
     onAuthChange(cb: (e: AuthEvent) => void): () => void {
       const handler = (_e: unknown, payload: AuthEvent): void => cb(payload);
       ipcRenderer.on('auth:changed', handler);
       return () => ipcRenderer.removeListener('auth:changed', handler);
     },
+  },
+  provider: {
+    getActive: (): Promise<Provider> => ipcRenderer.invoke('provider:getActive') as Promise<Provider>,
+    setActive: (name: Provider): Promise<void> =>
+      ipcRenderer.invoke('provider:setActive', name) as Promise<void>,
+  },
+  youtube: {
+    loadVideoId: (videoId: string): Promise<void> =>
+      ipcRenderer.invoke('yt:loadVideoId', { videoId }) as Promise<void>,
+    getQueue: (): Promise<QueueItem[]> =>
+      ipcRenderer.invoke('yt:getQueue') as Promise<QueueItem[]>,
   },
   player: {
     get: (): Promise<PlaybackState> => ipcRenderer.invoke('player:get') as Promise<PlaybackState>,
@@ -31,6 +47,23 @@ const api = {
       const handler = (_e: unknown, payload: PlaybackState): void => cb(payload);
       ipcRenderer.on('player:state', handler);
       return () => ipcRenderer.removeListener('player:state', handler);
+    },
+  },
+  // Internal bridge between main and the YouTubeEmbed component.
+  // Not for application code — embed-only.
+  _ytBridge: {
+    onControl(cb: (cmd: YouTubeControl) => void): () => void {
+      const handler = (_e: unknown, payload: YouTubeControl): void => cb(payload);
+      ipcRenderer.on('yt:control', handler);
+      return () => ipcRenderer.removeListener('yt:control', handler);
+    },
+    onRequestState(cb: () => void): () => void {
+      const handler = (): void => cb();
+      ipcRenderer.on('yt:request-state', handler);
+      return () => ipcRenderer.removeListener('yt:request-state', handler);
+    },
+    sendState(snap: YouTubePlayerSnapshot): void {
+      ipcRenderer.send('yt:state', snap);
     },
   },
 } as const;
