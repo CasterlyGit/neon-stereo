@@ -16,6 +16,10 @@ const api = {
     exitDemo: (): Promise<void> => ipcRenderer.invoke('auth:exitDemo') as Promise<void>,
     startYouTube: (): Promise<void> => ipcRenderer.invoke('auth:startYouTube') as Promise<void>,
     exitYouTube: (): Promise<void> => ipcRenderer.invoke('auth:exitYouTube') as Promise<void>,
+    googleLogin: (): Promise<void> => ipcRenderer.invoke('auth:googleLogin') as Promise<void>,
+    googleLogout: (): Promise<void> => ipcRenderer.invoke('auth:googleLogout') as Promise<void>,
+    getGoogleStatus: (): Promise<AuthStatus> =>
+      ipcRenderer.invoke('auth:getGoogleStatus') as Promise<AuthStatus>,
     onAuthChange(cb: (e: AuthEvent) => void): () => void {
       const handler = (_e: unknown, payload: AuthEvent): void => cb(payload);
       ipcRenderer.on('auth:changed', handler);
