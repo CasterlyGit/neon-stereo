@@ -57,9 +57,14 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   // Else default 'spotify'. We resolve preferences async after handlers register.
   let mode: Provider = process.env['NEON_DEMO'] === '1' ? 'demo' : envProvider() ?? 'spotify';
 
-  if (mode === 'spotify' && !clientId) {
+  // Only warn at boot when the user has nothing wired up at all. If
+  // GOOGLE_OAUTH_CLIENT_ID is configured, they're using YouTube and don't
+  // need a Spotify client ID — printing it then is just noise.
+  if (mode === 'spotify' && !clientId && !googleClientId) {
     // eslint-disable-next-line no-console
-    console.warn('[neon-stereo] SPOTIFY_CLIENT_ID not set; auth.login will fail.');
+    console.warn(
+      '[neon-stereo] no provider credentials configured; set SPOTIFY_CLIENT_ID or GOOGLE_OAUTH_CLIENT_ID in .env.',
+    );
   }
 
   const emitPlayerState = (state: PlaybackState): void => {

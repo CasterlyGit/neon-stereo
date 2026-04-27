@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AuthEvent, PlaybackState, Provider } from './types.js';
+import { IPC_ERROR_TAG, type AuthEvent, type PlaybackState, type Provider } from './types.js';
 import type { QueueItem } from './youtube/preferences.js';
 import type { YouTubeControl } from './youtube/poller.js';
 import type { YouTubePlayerSnapshot } from './youtube/mapper.js';
@@ -12,20 +12,48 @@ import type {
 
 type AuthStatus = { kind: 'logged-in' | 'logged-out' };
 
+// Electron wraps thrown errors so the renderer sees a generic `Error invoking
+// remote method '...': <message>`. Custom properties on the thrown value are
+// dropped, which costs us the structured `code`/`status` we use to render
+// friendly UI messages. Main encodes those fields with `IPC_ERROR_TAG` in the
+// error message; here we extract and re-attach them.
+function rethrowIpcError(e: unknown): never {
+  const raw = e instanceof Error ? e.message : String(e);
+  const idx = raw.indexOf(IPC_ERROR_TAG);
+  if (idx >= 0) {
+    const tail = raw.slice(idx + IPC_ERROR_TAG.length);
+    try {
+      const parsed = JSON.parse(tail) as { code?: string; message?: string; status?: number };
+      if (typeof parsed.message === 'string') {
+        throw Object.assign(new Error(parsed.message), {
+          code: parsed.code ?? 'UNKNOWN',
+          status: typeof parsed.status === 'number' ? parsed.status : 0,
+        });
+      }
+    } catch (parseErr) {
+      if (parseErr instanceof Error && 'code' in parseErr) throw parseErr;
+    }
+  }
+  throw Object.assign(new Error(raw), { code: 'UNKNOWN', status: 0 });
+}
+
+function call<T>(channel: string, ...args: unknown[]): Promise<T> {
+  return (ipcRenderer.invoke(channel, ...args) as Promise<T>).catch(rethrowIpcError);
+}
+
 const api = {
   auth: {
-    login: (): Promise<void> => ipcRenderer.invoke('auth:login') as Promise<void>,
-    logout: (): Promise<void> => ipcRenderer.invoke('auth:logout') as Promise<void>,
-    getStatus: (): Promise<AuthStatus> => ipcRenderer.invoke('auth:getStatus') as Promise<AuthStatus>,
-    getToken: (): Promise<string | null> => ipcRenderer.invoke('auth:getToken') as Promise<string | null>,
-    startDemo: (): Promise<void> => ipcRenderer.invoke('auth:startDemo') as Promise<void>,
-    exitDemo: (): Promise<void> => ipcRenderer.invoke('auth:exitDemo') as Promise<void>,
-    startYouTube: (): Promise<void> => ipcRenderer.invoke('auth:startYouTube') as Promise<void>,
-    exitYouTube: (): Promise<void> => ipcRenderer.invoke('auth:exitYouTube') as Promise<void>,
-    googleLogin: (): Promise<void> => ipcRenderer.invoke('auth:googleLogin') as Promise<void>,
-    googleLogout: (): Promise<void> => ipcRenderer.invoke('auth:googleLogout') as Promise<void>,
-    getGoogleStatus: (): Promise<AuthStatus> =>
-      ipcRenderer.invoke('auth:getGoogleStatus') as Promise<AuthStatus>,
+    login: (): Promise<void> => call('auth:login'),
+    logout: (): Promise<void> => call('auth:logout'),
+    getStatus: (): Promise<AuthStatus> => call('auth:getStatus'),
+    getToken: (): Promise<string | null> => call('auth:getToken'),
+    startDemo: (): Promise<void> => call('auth:startDemo'),
+    exitDemo: (): Promise<void> => call('auth:exitDemo'),
+    startYouTube: (): Promise<void> => call('auth:startYouTube'),
+    exitYouTube: (): Promise<void> => call('auth:exitYouTube'),
+    googleLogin: (): Promise<void> => call('auth:googleLogin'),
+    googleLogout: (): Promise<void> => call('auth:googleLogout'),
+    getGoogleStatus: (): Promise<AuthStatus> => call('auth:getGoogleStatus'),
     onAuthChange(cb: (e: AuthEvent) => void): () => void {
       const handler = (_e: unknown, payload: AuthEvent): void => cb(payload);
       ipcRenderer.on('auth:changed', handler);
@@ -33,39 +61,32 @@ const api = {
     },
   },
   provider: {
-    getActive: (): Promise<Provider> => ipcRenderer.invoke('provider:getActive') as Promise<Provider>,
-    setActive: (name: Provider): Promise<void> =>
-      ipcRenderer.invoke('provider:setActive', name) as Promise<void>,
+    getActive: (): Promise<Provider> => call('provider:getActive'),
+    setActive: (name: Provider): Promise<void> => call('provider:setActive', name),
   },
   youtube: {
-    getQueue: (): Promise<QueueItem[]> =>
-      ipcRenderer.invoke('yt:getQueue') as Promise<QueueItem[]>,
+    getQueue: (): Promise<QueueItem[]> => call('yt:getQueue'),
     library: (opts?: { maxResults?: number }): Promise<YouTubeVideoSummary[]> =>
-      ipcRenderer.invoke('yt:library', opts ?? {}) as Promise<YouTubeVideoSummary[]>,
+      call('yt:library', opts ?? {}),
     playlists: (opts?: { maxResults?: number }): Promise<YouTubePlaylistSummary[]> =>
-      ipcRenderer.invoke('yt:playlists', opts ?? {}) as Promise<YouTubePlaylistSummary[]>,
+      call('yt:playlists', opts ?? {}),
     search: (q: string, opts?: { maxResults?: number }): Promise<YouTubeSearchResult[]> =>
-      ipcRenderer.invoke('yt:search', { q, ...(opts ?? {}) }) as Promise<YouTubeSearchResult[]>,
+      call('yt:search', { q, ...(opts ?? {}) }),
     playlistItems: (
       playlistId: string,
       opts?: { maxResults?: number },
-    ): Promise<YouTubePlaylistItem[]> =>
-      ipcRenderer.invoke('yt:playlistItems', { playlistId, ...(opts ?? {}) }) as Promise<
-        YouTubePlaylistItem[]
-      >,
+    ): Promise<YouTubePlaylistItem[]> => call('yt:playlistItems', { playlistId, ...(opts ?? {}) }),
     playVideo: (item: { videoId: string; title?: string; durationMs?: number }): Promise<void> =>
-      ipcRenderer.invoke('yt:playVideo', item) as Promise<void>,
+      call('yt:playVideo', item),
   },
   player: {
-    get: (): Promise<PlaybackState> => ipcRenderer.invoke('player:get') as Promise<PlaybackState>,
-    play: (): Promise<void> => ipcRenderer.invoke('player:play') as Promise<void>,
-    pause: (): Promise<void> => ipcRenderer.invoke('player:pause') as Promise<void>,
-    next: (): Promise<void> => ipcRenderer.invoke('player:next') as Promise<void>,
-    prev: (): Promise<void> => ipcRenderer.invoke('player:prev') as Promise<void>,
-    seek: (positionMs: number): Promise<void> =>
-      ipcRenderer.invoke('player:seek', positionMs) as Promise<void>,
-    setVolume: (percent: number): Promise<void> =>
-      ipcRenderer.invoke('player:volume', percent) as Promise<void>,
+    get: (): Promise<PlaybackState> => call('player:get'),
+    play: (): Promise<void> => call('player:play'),
+    pause: (): Promise<void> => call('player:pause'),
+    next: (): Promise<void> => call('player:next'),
+    prev: (): Promise<void> => call('player:prev'),
+    seek: (positionMs: number): Promise<void> => call('player:seek', positionMs),
+    setVolume: (percent: number): Promise<void> => call('player:volume', percent),
     onState(cb: (s: PlaybackState) => void): () => void {
       const handler = (_e: unknown, payload: PlaybackState): void => cb(payload);
       ipcRenderer.on('player:state', handler);

@@ -86,6 +86,7 @@ afterEach(() => {
   stopActivePoller = null;
   delete process.env['NEON_DEMO'];
   delete process.env['SPOTIFY_CLIENT_ID'];
+  delete process.env['GOOGLE_OAUTH_CLIENT_ID'];
   vi.clearAllMocks();
 });
 
@@ -126,23 +127,42 @@ describe('ipc boot — keychain isolation (AC-6 boot path)', () => {
 });
 
 describe('ipc boot — startup warning hygiene', () => {
-  it('SPOTIFY_CLIENT_ID-not-set warning is suppressed when NEON_DEMO=1', async () => {
+  it('no-credentials warning is suppressed when NEON_DEMO=1', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      await bootIpc({ NEON_DEMO: '1', SPOTIFY_CLIENT_ID: '' });
+      await bootIpc({ NEON_DEMO: '1', SPOTIFY_CLIENT_ID: '', GOOGLE_OAUTH_CLIENT_ID: '' });
       const warnings = warnSpy.mock.calls.map((c) => String(c[0] ?? ''));
-      expect(warnings.some((w) => w.includes('SPOTIFY_CLIENT_ID not set'))).toBe(false);
+      expect(warnings.some((w) => w.includes('no provider credentials configured'))).toBe(false);
     } finally {
       warnSpy.mockRestore();
     }
   });
 
-  it('SPOTIFY_CLIENT_ID-not-set warning DOES print in spotify mode without a client id', async () => {
+  it('no-credentials warning prints when neither Spotify nor Google is configured', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      await bootIpc({ NEON_DEMO: undefined, SPOTIFY_CLIENT_ID: '' });
+      await bootIpc({
+        NEON_DEMO: undefined,
+        SPOTIFY_CLIENT_ID: '',
+        GOOGLE_OAUTH_CLIENT_ID: '',
+      });
       const warnings = warnSpy.mock.calls.map((c) => String(c[0] ?? ''));
-      expect(warnings.some((w) => w.includes('SPOTIFY_CLIENT_ID not set'))).toBe(true);
+      expect(warnings.some((w) => w.includes('no provider credentials configured'))).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('no-credentials warning is suppressed when GOOGLE_OAUTH_CLIENT_ID is set (user is using YouTube)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await bootIpc({
+        NEON_DEMO: undefined,
+        SPOTIFY_CLIENT_ID: '',
+        GOOGLE_OAUTH_CLIENT_ID: 'google-cid',
+      });
+      const warnings = warnSpy.mock.calls.map((c) => String(c[0] ?? ''));
+      expect(warnings.some((w) => w.includes('no provider credentials configured'))).toBe(false);
     } finally {
       warnSpy.mockRestore();
     }
