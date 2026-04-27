@@ -140,7 +140,7 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     demoPoller = buildDemoPoller();
     attachPoller(demoPoller);
     await demoPoller.pollNow();
-    void patchPreferences({ lastProvider: 'demo' });
+    await patchPreferences({ lastProvider: 'demo' });
   }
 
   async function exitDemo(): Promise<void> {
@@ -150,7 +150,7 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     mode = 'spotify';
     demoSession.exit();
     attachPoller(spotifyPoller);
-    void patchPreferences({ lastProvider: 'spotify' });
+    await patchPreferences({ lastProvider: 'spotify' });
   }
 
   async function startYouTube(): Promise<void> {
@@ -161,7 +161,7 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     youtubePoller = buildYouTubePoller(prefs.ytQueue);
     attachPoller(youtubePoller);
     ytSession.start();
-    void patchPreferences({ lastProvider: 'youtube' });
+    await patchPreferences({ lastProvider: 'youtube' });
   }
 
   async function exitYouTube(): Promise<void> {
@@ -171,7 +171,7 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     mode = 'spotify';
     ytSession.exit();
     attachPoller(spotifyPoller);
-    void patchPreferences({ lastProvider: 'spotify' });
+    await patchPreferences({ lastProvider: 'spotify' });
   }
 
   async function deactivateActive(): Promise<void> {
@@ -194,11 +194,12 @@ export function registerIpcHandlers(getWin: WinGetter): void {
     demoPoller = buildDemoPoller();
     attachPoller(demoPoller);
   } else if (mode === 'youtube') {
-    // Async preferences read; attach poller as soon as resolved.
+    youtubePoller = buildYouTubePoller([]);
+    attachPoller(youtubePoller);
+    ytSession.start();
+    // Hydrate the persisted queue asynchronously without blocking boot.
     void readPreferences().then((prefs) => {
-      youtubePoller = buildYouTubePoller(prefs.ytQueue);
-      attachPoller(youtubePoller);
-      ytSession.start();
+      for (const item of prefs.ytQueue) ytQueue.add(item);
     });
   } else {
     attachPoller(spotifyPoller);
