@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>neon-stereo — retro-neon desktop dashboard for your music</title>
+<meta name="description" content="A retro-styled neon-accented Electron dashboard for Spotify and YouTube. Live interactive mockup of the actual UI." />
+<style>
+  :root {
+    /* App page chrome (subtle, dark) */
+    --page-bg: #07080d;
+    --page-text: #d8dae6;
+    --page-text-dim: #6f7488;
+    --page-text-faint: #3f4456;
+    --page-elev: #11131c;
+
+    /* neon-stereo brand tokens (mirrored from src/styles/tokens.css) */
+    --bg: #0a0a12;
+    --bg-elev: #11111c;
+    --text: #f4f4ff;
+    --text-dim: #7d8094;
+    --accent: #ff3ec8;
+    --accent-2: #00ffd5;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+    --glow:
+      0 0 4px var(--accent),
+      0 0 12px var(--accent),
+      0 0 28px var(--accent);
+    --glow-2:
+      0 0 4px var(--accent-2),
+      0 0 12px var(--accent-2),
+      0 0 28px var(--accent-2);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--page-bg); color: var(--page-text); font-family: var(--body); -webkit-font-smoothing: antialiased; min-height: 100vh; }
+  body {
+    background:
+      radial-gradient(900px 600px at 80% -10%, rgba(255, 62, 200, 0.07), transparent 60%),
+      radial-gradient(700px 500px at -10% 80%, rgba(0, 255, 213, 0.05), transparent 60%),
+      var(--page-bg);
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 48px 24px 80px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 36px; }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 38px; height: 38px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #8e1a6b);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 24px rgba(255, 62, 200, 0.45);
+  }
+  .logo svg { width: 22px; height: 22px; }
+  .brand-name { font-family: var(--mono); font-size: 14px; letter-spacing: 0.02em; color: var(--page-text); }
+  .brand-name b { color: var(--accent); text-shadow: 0 0 6px rgba(255,62,200,0.6); }
+  .repo-link {
+    font-family: var(--mono); font-size: 12px; color: var(--page-text-dim);
+    text-decoration: none; padding: 6px 12px; border: 1px solid var(--page-text-faint);
+    border-radius: 6px; transition: all 150ms;
+  }
+  .repo-link:hover { border-color: var(--page-text-dim); color: var(--page-text); }
+
+  .hero { margin-bottom: 38px; }
+  h1 {
+    font-size: clamp(28px, 5vw, 44px); line-height: 1.1; letter-spacing: -0.02em;
+    font-weight: 700; margin-bottom: 14px; color: var(--page-text);
+  }
+  h1 .accent {
+    color: var(--accent);
+    text-shadow: 0 0 18px rgba(255, 62, 200, 0.5);
+  }
+  h1 .accent2 {
+    color: var(--accent-2);
+    text-shadow: 0 0 18px rgba(0, 255, 213, 0.45);
+  }
+  .lede { font-size: 16px; color: var(--page-text-dim); max-width: 680px; line-height: 1.55; }
+  .lede code { font-family: var(--mono); color: var(--page-text); background: var(--page-elev); padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+
+  /* App frame — the actual neon-stereo Electron window */
+  .app-frame {
+    width: 100%; max-width: 480px; margin: 0 auto;
+    aspect-ratio: 9 / 14;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(255, 62, 200, 0.3);
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.5),
+      0 30px 70px rgba(0,0,0,0.6),
+      0 0 80px rgba(255, 62, 200, 0.18);
+    display: flex; flex-direction: column;
+  }
+  /* Scanlines */
+  .app-frame::before {
+    content: '';
+    position: absolute; inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.03) 0,
+      rgba(255,255,255,0.03) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    z-index: 10;
+  }
+  /* CRT vignette */
+  .app-frame::after {
+    content: '';
+    position: absolute; inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%);
+    z-index: 10;
+  }
+  /* Title bar */
+  .ns-titlebar {
+    height: 30px; flex-shrink: 0;
+    background: linear-gradient(180deg, #15151f, #0d0d16);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: flex; align-items: center; padding: 0 12px; gap: 8px;
+    font-size: 10px; letter-spacing: 0.15em; color: var(--text-dim);
+  }
+  .ns-traffic { display: flex; gap: 6px; }
+  .ns-traffic span { width: 10px; height: 10px; border-radius: 50%; }
+  .ns-traffic .r { background: #ff5f57; }
+  .ns-traffic .y { background: #febc2e; }
+  .ns-traffic .g { background: #28c840; }
+  .ns-title { flex: 1; text-align: center; font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; }
+  .ns-title .glow-mini { color: var(--accent-2); text-shadow: 0 0 6px var(--accent-2); }
+
+  /* device row */
+  .ns-device-row {
+    padding: 6px 18px 6px;
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .ns-badge {
+    font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--accent-2); text-shadow: 0 0 4px var(--accent-2);
+    border: 1px solid rgba(0,255,213,0.3);
+    padding: 3px 8px; border-radius: 3px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .ns-badge .led {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent-2); box-shadow: 0 0 6px var(--accent-2);
+    animation: led-blink 1.6s ease-in-out infinite;
+  }
+  @keyframes led-blink { 50% { opacity: 0.5; } }
+  .ns-disconnect {
+    background: transparent;
+    border: 1px solid rgba(125,128,148,0.4);
+    color: var(--text-dim);
+    font-family: var(--mono); font-size: 9px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 3px;
+    cursor: pointer; transition: all 150ms;
+  }
+  .ns-disconnect:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* now playing */
+  .ns-now { padding: 4px 18px 0; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .ns-art {
+    width: 100%; aspect-ratio: 1 / 1;
+    border-radius: 5px;
+    background: var(--bg-elev);
+    border: 1px solid var(--accent);
+    box-shadow: var(--glow);
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .ns-art canvas, .ns-art .art-svg { width: 100%; height: 100%; display: block; }
+  .ns-art .art-svg { background: linear-gradient(135deg, var(--accent), #4d1f4f); }
+
+  .ns-meta { margin-top: 14px; flex-shrink: 0; }
+  .ns-title-text {
+    font-size: 17px; font-weight: 700;
+    color: var(--accent); text-shadow: var(--glow);
+    letter-spacing: 0.04em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    animation: flicker 5s infinite;
+  }
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    48% { opacity: 0.95; }
+    52% { opacity: 1; }
+  }
+  .ns-sub {
+    color: var(--text-dim);
+    font-size: 11px; margin-top: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* progress */
+  .ns-progress { margin-top: 14px; flex-shrink: 0; }
+  .ns-bar {
+    position: relative; height: 3px;
+    background: rgba(125, 128, 148, 0.2);
+    border-radius: 1.5px; overflow: hidden;
+  }
+  .ns-fill {
+    position: absolute; top: 0; left: 0; bottom: 0;
+    width: 0%;
+    background: var(--accent-2);
+    box-shadow: var(--glow-2);
+    transition: width 250ms linear;
+  }
+  .ns-time { display: flex; justify-content: space-between; margin-top: 5px; font-size: 10px; color: var(--text-dim); }
+
+  /* transport */
+  .ns-transport {
+    padding: 14px 18px 16px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    flex-shrink: 0;
+  }
+  .ns-btn {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid var(--text-dim);
+    color: var(--text);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 150ms ease-out;
+  }
+  .ns-btn svg { width: 16px; height: 16px; fill: currentColor; }
+  .ns-btn:hover { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .ns-btn:active { transform: scale(0.94); }
+  .ns-btn.play {
+    width: 50px; height: 50px;
+    border-color: var(--accent-2);
+    color: var(--accent-2);
+    box-shadow: var(--glow-2);
+  }
+  .ns-btn.play:hover { color: var(--accent-2); border-color: var(--accent-2); box-shadow: 0 0 18px var(--accent-2); }
+  .ns-btn.play svg { width: 22px; height: 22px; }
+
+  .ns-vol-row {
+    padding: 6px 18px 14px;
+    display: flex; align-items: center; gap: 10px;
+    border-top: 1px dashed rgba(125,128,148,0.15);
+    flex-shrink: 0;
+  }
+  .ns-vol-row .vol-label {
+    font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .ns-vol-bar { flex: 1; height: 3px; background: rgba(125,128,148,0.2); border-radius: 1.5px; position: relative; cursor: pointer; }
+  .ns-vol-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 65%; background: var(--accent-2); box-shadow: 0 0 6px var(--accent-2); border-radius: 1.5px; }
+  .ns-vol-knob { position: absolute; top: 50%; width: 10px; height: 10px; border-radius: 50%; background: var(--accent-2); box-shadow: var(--glow-2); transform: translate(-50%, -50%); }
+
+  /* Controls panel under the app */
+  .controls {
+    margin-top: 28px;
+    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+  }
+  .ctl-btn {
+    background: transparent;
+    border: 1px solid var(--page-text-faint);
+    color: var(--page-text-dim);
+    font-family: var(--mono); font-size: 11px;
+    padding: 8px 14px; border-radius: 7px;
+    cursor: pointer; transition: all 140ms;
+    letter-spacing: 0.04em;
+  }
+  .ctl-btn:hover { color: var(--page-text); border-color: var(--page-text-dim); }
+  .ctl-btn.active { color: var(--accent); border-color: var(--accent); box-shadow: 0 0 12px rgba(255,62,200,0.25); }
+
+  .features {
+    margin-top: 56px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;
+  }
+  .feat {
+    background: var(--page-elev); border: 1px solid #1c1f2b; border-radius: 12px; padding: 20px;
+  }
+  .feat h3 { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px; text-shadow: 0 0 8px rgba(255,62,200,0.35); }
+  .feat p { color: var(--page-text-dim); font-size: 13.5px; line-height: 1.55; }
+  .feat p b { color: var(--page-text); font-weight: 600; }
+
+  footer { margin-top: 56px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--page-text-faint); }
+  footer a { color: var(--page-text-dim); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+
+  @media (max-width: 600px) {
+    .wrap { padding: 28px 16px 60px; }
+    .app-frame { aspect-ratio: 9 / 15; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="8" cy="13" r="2.6"/><circle cx="16" cy="13" r="2.6"/><path d="M3 6l3-3h12l3 3"/>
+        </svg>
+      </div>
+      <div class="brand-name">neon<b>-stereo</b></div>
+    </div>
+    <a class="repo-link" href="https://github.com/CasterlyGit/neon-stereo" target="_blank" rel="noopener">view code →</a>
+  </header>
+
+  <section class="hero">
+    <h1>retro <span class="accent">neon</span> dashboard for your <span class="accent2">music</span>.</h1>
+    <p class="lede">An Electron desktop client for Spotify and YouTube with scanlines, CRT vignette, and a multi-layer text-shadow neon stack. PKCE auth in the main process. Hand-rolled CSS — no UI libs. Below is the actual renderer rebuilt for the browser. Press the transport buttons.</p>
+  </section>
+
+  <section class="app-frame" id="appFrame">
+    <div class="ns-titlebar">
+      <div class="ns-traffic"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+      <div class="ns-title">// <span class="glow-mini">NEON STEREO</span> //</div>
+      <div style="width:50px"></div>
+    </div>
+
+    <div class="ns-device-row">
+      <span class="ns-badge"><span class="led"></span>DEMO · M2 MacBook Air</span>
+      <button class="ns-disconnect">disconnect</button>
+    </div>
+
+    <div class="ns-now">
+      <div class="ns-art" id="art">
+        <!-- art is set by JS as inline SVG per track -->
+      </div>
+      <div class="ns-meta">
+        <div class="ns-title-text" id="trackTitle">—</div>
+        <div class="ns-sub" id="trackSub">—</div>
+      </div>
+      <div class="ns-progress">
+        <div class="ns-bar"><div class="ns-fill" id="fill"></div></div>
+        <div class="ns-time"><span id="tNow">0:00</span><span id="tDur">0:00</span></div>
+      </div>
+    </div>
+
+    <div class="ns-transport">
+      <button class="ns-btn" id="btnPrev" title="previous">
+        <svg viewBox="0 0 24 24"><path d="M6 4v16h2V4H6zm14 0L10 12l10 8V4z"/></svg>
+      </button>
+      <button class="ns-btn play" id="btnPlay" title="play / pause">
+        <svg viewBox="0 0 24 24" id="playIcon"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button class="ns-btn" id="btnNext" title="next">
+        <svg viewBox="0 0 24 24"><path d="M16 4v16h2V4h-2zM4 4l10 8-10 8V4z"/></svg>
+      </button>
+    </div>
+
+    <div class="ns-vol-row">
+      <span class="vol-label">vol</span>
+      <div class="ns-vol-bar" id="volBar">
+        <div class="ns-vol-fill" id="volFill"></div>
+        <div class="ns-vol-knob" id="volKnob" style="left:65%"></div>
+      </div>
+      <span class="vol-label" id="volLabel">65</span>
+    </div>
+  </section>
+
+  <section class="controls">
+    <button class="ctl-btn active" data-provider="spotify">spotify</button>
+    <button class="ctl-btn" data-provider="youtube">youtube</button>
+    <button class="ctl-btn" data-provider="demo">demo</button>
+  </section>
+
+  <section class="features">
+    <div class="feat">
+      <h3>// Retro aesthetic</h3>
+      <p>Scanlines via repeating linear gradient. <b>Multi-layer text-shadow</b> for the neon glow stack. CRT vignette via radial gradient. Flicker via 5s keyframe. Pure CSS — no shaders.</p>
+    </div>
+    <div class="feat">
+      <h3>// Provider-agnostic</h3>
+      <p>Spotify uses PKCE + the typed <code style="font-family:var(--mono);color:var(--page-text)">/v1/me/player</code> client. YouTube runs in an IFrame Player API embed. Both funnel into the same <b>PlaybackState</b> stream.</p>
+    </div>
+    <div class="feat">
+      <h3>// Security posture</h3>
+      <p>Bearer tokens stay in main process — never enter the renderer. Refresh tokens stored in <b>macOS Keychain via keytar</b>, with a 0600 JSON fallback if the native binding fails.</p>
+    </div>
+  </section>
+
+  <footer>
+    built by <a href="https://github.com/CasterlyGit" target="_blank" rel="noopener">@CasterlyGit</a> · this is the actual renderer rebuilt for the browser · the real app is Electron + React + Vite · <a href="https://github.com/CasterlyGit/neon-stereo" target="_blank" rel="noopener">see the code</a>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // Track fixtures
+  const TRACKS = [
+    {
+      title: 'NIGHTDRIVE',
+      artist: 'CARPENTER BRUT',
+      album: 'TRILOGY',
+      duration: 218,
+      hues: [320, 280] // pink to purple
+    },
+    {
+      title: 'TURBO KILLER',
+      artist: 'CARPENTER BRUT',
+      album: 'LEATHER TEETH',
+      duration: 244,
+      hues: [180, 240] // cyan to blue
+    },
+    {
+      title: 'SUNSET',
+      artist: 'THE MIDNIGHT',
+      album: 'ENDLESS SUMMER',
+      duration: 263,
+      hues: [20, 320] // orange to pink
+    },
+    {
+      title: 'MIAMI VIRTUE',
+      artist: 'MEGA DRIVE',
+      album: '198XAD',
+      duration: 192,
+      hues: [160, 280] // teal to purple
+    },
+    {
+      title: 'STARLIGHT EXPRESS',
+      artist: 'PERTURBATOR',
+      album: 'DANGEROUS DAYS',
+      duration: 301,
+      hues: [340, 200] // hot pink to azure
+    }
+  ];
+
+  // Generate SVG art for a track based on hues
+  function setArt(track) {
+    const [h1, h2] = track.hues;
+    const grid = [];
+    // Build a synthwave-grid SVG
+    const lines = 8;
+    for (let i = 1; i <= lines; i++) {
+      const y = 50 + (i * i * 0.7);
+      grid.push(`<line x1="0" y1="${y}" x2="100" y2="${y}" stroke="hsla(${h2}, 100%, 60%, ${0.15 + i * 0.05})" stroke-width="0.4"/>`);
+    }
+    for (let i = 0; i <= 10; i++) {
+      const x1 = i * 10;
+      const x2 = (i * 10 - 50) * 2.5 + 50;
+      grid.push(`<line x1="${x1}" y1="50" x2="${x2}" y2="100" stroke="hsla(${h2}, 100%, 60%, 0.3)" stroke-width="0.3"/>`);
+    }
+    const svg = `
+      <svg class="art-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="hsl(${h1}, 90%, 8%)"/>
+            <stop offset="60%" stop-color="hsl(${h1}, 85%, 22%)"/>
+            <stop offset="100%" stop-color="hsl(${h2}, 90%, 12%)"/>
+          </linearGradient>
+          <radialGradient id="sun" cx="50%" cy="55%" r="22%">
+            <stop offset="0%" stop-color="hsl(${h1}, 100%, 75%)"/>
+            <stop offset="60%" stop-color="hsl(${h1}, 100%, 55%)"/>
+            <stop offset="100%" stop-color="hsl(${h1}, 100%, 55%)" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect width="100" height="100" fill="url(#sky)"/>
+        <circle cx="50" cy="55" r="22" fill="url(#sun)"/>
+        <rect x="0" y="50" width="100" height="50" fill="hsla(${h2}, 80%, 5%, 0.5)"/>
+        ${grid.join('\n')}
+      </svg>
+    `;
+    document.getElementById('art').innerHTML = svg;
+  }
+
+  // State
+  let idx = 0;
+  let playing = true;
+  let positionMs = 0;
+  let lastTick = performance.now();
+  let volume = 65;
+
+  const trackTitle = document.getElementById('trackTitle');
+  const trackSub = document.getElementById('trackSub');
+  const fill = document.getElementById('fill');
+  const tNow = document.getElementById('tNow');
+  const tDur = document.getElementById('tDur');
+  const playIcon = document.getElementById('playIcon');
+  const btnPlay = document.getElementById('btnPlay');
+  const btnPrev = document.getElementById('btnPrev');
+  const btnNext = document.getElementById('btnNext');
+  const volBar = document.getElementById('volBar');
+  const volFill = document.getElementById('volFill');
+  const volKnob = document.getElementById('volKnob');
+  const volLabel = document.getElementById('volLabel');
+
+  function fmt(s) {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  }
+
+  function loadTrack(i) {
+    idx = (i + TRACKS.length) % TRACKS.length;
+    const t = TRACKS[idx];
+    trackTitle.textContent = t.title;
+    trackSub.textContent = `${t.artist} · ${t.album}`;
+    tDur.textContent = fmt(t.duration);
+    positionMs = 0;
+    setArt(t);
+  }
+
+  function togglePlay() {
+    playing = !playing;
+    playIcon.innerHTML = playing
+      ? '<path d="M8 5v14l11-7z"/>' // play (becomes "play" icon when paused… wait, we show play icon when paused)
+      : '<path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z"/>'; // pause bars
+    // correct: when playing, show pause; when paused, show play
+    playIcon.innerHTML = playing
+      ? '<path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z"/>'
+      : '<path d="M8 5v14l11-7z"/>';
+  }
+
+  btnPlay.addEventListener('click', togglePlay);
+  btnPrev.addEventListener('click', () => loadTrack(idx - 1));
+  btnNext.addEventListener('click', () => loadTrack(idx + 1));
+
+  // Volume bar click + drag
+  function setVolFromEvent(e) {
+    const rect = volBar.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const pct = Math.max(0, Math.min(100, (x / rect.width) * 100));
+    volume = Math.round(pct);
+    volFill.style.width = pct + '%';
+    volKnob.style.left = pct + '%';
+    volLabel.textContent = volume;
+  }
+  let draggingVol = false;
+  volBar.addEventListener('mousedown', (e) => { draggingVol = true; setVolFromEvent(e); });
+  document.addEventListener('mousemove', (e) => { if (draggingVol) setVolFromEvent(e); });
+  document.addEventListener('mouseup', () => { draggingVol = false; });
+  volBar.addEventListener('touchstart', (e) => { draggingVol = true; setVolFromEvent(e); }, { passive: true });
+  document.addEventListener('touchmove', (e) => { if (draggingVol) setVolFromEvent(e); }, { passive: true });
+  document.addEventListener('touchend', () => { draggingVol = false; });
+
+  // Keyboard
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+    if (e.code === 'ArrowRight') { loadTrack(idx + 1); }
+    if (e.code === 'ArrowLeft') { loadTrack(idx - 1); }
+  });
+
+  // Provider chips (cosmetic)
+  document.querySelectorAll('[data-provider]').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('[data-provider]').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const p = b.dataset.provider;
+      const badge = document.querySelector('.ns-badge');
+      if (p === 'spotify') badge.innerHTML = '<span class="led"></span>SPOTIFY · M2 MacBook Air';
+      else if (p === 'youtube') badge.innerHTML = '<span class="led"></span>YOUTUBE · embedded';
+      else badge.innerHTML = '<span class="led"></span>DEMO · synthetic device';
+    });
+  });
+
+  // 1Hz tween of progress, like the real app
+  function tick() {
+    const now = performance.now();
+    const dt = now - lastTick;
+    lastTick = now;
+    const t = TRACKS[idx];
+    if (playing) {
+      positionMs += dt;
+      if (positionMs / 1000 >= t.duration) {
+        // auto-next
+        loadTrack(idx + 1);
+        playing = true;
+        playIcon.innerHTML = '<path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z"/>';
+      }
+    }
+    const pct = Math.min(100, (positionMs / (t.duration * 1000)) * 100);
+    fill.style.width = pct + '%';
+    tNow.textContent = fmt(positionMs / 1000);
+    requestAnimationFrame(tick);
+  }
+
+  // Init: start playing
+  loadTrack(0);
+  playIcon.innerHTML = '<path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z"/>'; // pause-bars since "playing"
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

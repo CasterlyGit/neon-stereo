@@ -1,5 +1,7 @@
 # neon-stereo
 
+**[▶ Live demo](https://casterlygit.github.io/neon-stereo/)** — the actual renderer rebuilt for the browser: scanlines, neon glow stack, animated synthwave album art, working transport buttons.
+
 A retro-styled, neon-accented desktop dashboard for controlling your music.
 
 > Initial idea: "a stereo device dashboard that can control my spotify from my desktop, retro style with subtle neon highlights, needs to be an app"
