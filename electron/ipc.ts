@@ -36,6 +36,7 @@ import {
   type PlaybackState,
   type Provider,
 } from './types.js';
+import { setBridgeState } from './widgetBridge.js';
 
 type WinGetter = () => BrowserWindow | null;
 
@@ -70,6 +71,7 @@ export function registerIpcHandlers(getWin: WinGetter): void {
   const emitPlayerState = (state: PlaybackState): void => {
     const w = getWin();
     if (w) w.webContents.send('player:state', state);
+    setBridgeState(state, mode);
   };
 
   const oauth: OAuth = createOAuth({

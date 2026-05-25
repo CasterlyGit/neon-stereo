@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { registerIpcHandlers } from './ipc.js';
 import { startPoller, stopPoller, setPollerVisibility, setPollerFocus } from './spotify/poller.js';
+import { startNowPlayingServer, stopNowPlayingServer } from './nowPlayingServer.js';
 
 // CommonJS-compatible __dirname (electron-vite emits CJS for main).
 const __filename = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +59,7 @@ app.whenReady().then(() => {
   mainWindow = createWindow();
   registerIpcHandlers(() => mainWindow);
   startPoller(() => mainWindow);
+  startNowPlayingServer();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
@@ -66,9 +68,11 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopPoller();
+  stopNowPlayingServer();
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
   stopPoller();
+  stopNowPlayingServer();
 });
